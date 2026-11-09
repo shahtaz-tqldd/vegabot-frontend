@@ -1,4 +1,4 @@
-export const Logo = ({ className, ...props }) => (
+export const Logo = ({ className, fill="#527C24", ...props}) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 500 500"
@@ -25,9 +25,9 @@ export const Logo = ({ className, ...props }) => (
       C 208 282 170 258 155 214
       Z
     "
-      fill="#527C24"
+      fill={fill}
       fill-rule="evenodd"
-      stroke="#A3A58B"
+      stroke={fill}
       stroke-width="0.6"
       stroke-linejoin="round"
     />

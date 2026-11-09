@@ -11,6 +11,7 @@ import {
 import { trainedKnowledgeCount } from "@/features/chatbot/chatbot.helpers";
 import { cn, getInitials } from "@/lib/utils";
 import { Logo } from "@/assets/icons/logo";
+import ChatbotProfile from "@/components/shared/chatbot";
 
 const KnowledgeStat = ({ icon: Icon, label, count }) => {
   const IconComp = Icon;
@@ -38,15 +39,7 @@ const ChatbotCard = ({ chatbot }) => {
       className="group flex flex-col rounded-3xl border border-border bg-card p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10"
     >
       <div className="flx gap-3.5">
-        {chatbot.logo ? (
-          <img
-            src={chatbot.logo}
-            alt={chatbot.name}
-            className="size-12 shrink-0 rounded-2xl object-cover"
-          />
-        ) : (
-          <Logo className="size-8" />
-        )}
+        <ChatbotProfile />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
@@ -132,8 +125,8 @@ const ChatbotCard = ({ chatbot }) => {
           )}
 
           {chatbot.isAdminCreated && (
-            <span className="ml-auto shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">
-              Admin
+            <span className="ml-auto shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+              Admin Bot
             </span>
           )}
         </div>

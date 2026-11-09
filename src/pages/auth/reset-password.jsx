@@ -15,11 +15,8 @@ const ResetPasswordPage = () => {
   const [errorAnimationKey, setErrorAnimationKey] = useState(0);
   const navigate = useNavigate();
 
-  const initialToken =
-    searchParams.get("token") ||
-    searchParams.get("reset_token") ||
-    searchParams.get("uid") ||
-    "";
+  const initialToken = searchParams.get("token") || "";
+  const initialUid = searchParams.get("uid") || "";
   const initialEmail = searchParams.get("email") || "";
 
   const {
@@ -30,6 +27,7 @@ const ResetPasswordPage = () => {
     defaultValues: {
       email: initialEmail,
       token: initialToken,
+      uid: initialUid,
       password: "",
       confirm_password: "",
     },
@@ -40,7 +38,13 @@ const ResetPasswordPage = () => {
       const payload = Object.fromEntries(
         Object.entries(data).filter(([, value]) => String(value).trim() !== ""),
       );
-      await resetPassword(payload).unwrap();
+      await resetPassword({
+        email: payload.email,
+        token: payload.token,
+        uid: payload.uid,
+        new_password: payload.password,
+        confirm_password: payload.confirm_password,
+      }).unwrap();
       navigate("/login", {
         replace: true,
         state: { message: "Password reset successfully. Sign in to continue." },
@@ -55,8 +59,7 @@ const ResetPasswordPage = () => {
   return (
     <AuthContainer
       title="Set new password"
-      description="Choose a new password for your
-      vegabot account."
+      description="Choose a new password for vegabot account."
     >
       {error && (
         <div
@@ -67,40 +70,6 @@ const ResetPasswordPage = () => {
         </div>
       )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        <Controller
-          name="email"
-          control={control}
-          rules={{
-            pattern: {
-              value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-              message: "Enter a valid email address",
-            },
-          }}
-          render={({ field }) => (
-            <FloatingInput
-              {...field}
-              label="Email Address"
-              type="email"
-              error={errors.email?.message}
-            />
-          )}
-        />
-
-        <Controller
-          name="token"
-          control={control}
-          rules={{
-            required: "Reset token is required",
-          }}
-          render={({ field }) => (
-            <FloatingInput
-              {...field}
-              label="Reset Token"
-              error={errors.token?.message}
-            />
-          )}
-        />
-
         <Controller
           name="password"
           control={control}

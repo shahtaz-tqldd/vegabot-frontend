@@ -110,8 +110,7 @@ const LoginPage = () => {
       title="Let's get started"
       description={
         <p>
-          Sign in to access your{" "}
-          <span className="text-primary font-medium">vegabot</span> account
+          Sign in to access vegabot chatbot
         </p>
       }
     >

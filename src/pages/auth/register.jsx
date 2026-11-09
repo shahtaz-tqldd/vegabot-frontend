@@ -78,13 +78,7 @@ const RegisterPage = () => {
   return (
     <AuthContainer
       title="Create account"
-      description={
-        <p>
-          Register to start using your{" "}
-          <span className="text-primary font-medium">vegabot</span>{" "}
-          account
-        </p>
-      }
+      description={<p>Register to get access to the vegabot chatbot</p>}
     >
       {error && (
         <div

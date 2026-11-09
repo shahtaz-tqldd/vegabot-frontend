@@ -6,6 +6,7 @@ import ChatbotTile from "../chatbot-tile";
 import Composer from "./composer";
 import MessageList from "./message-list";
 import VoiceCall from "./voice-call";
+import ChatbotProfile from "@/components/shared/chatbot";
 
 const SUGGESTED_PROMPTS = [
   "What can you help me with?",
@@ -17,7 +18,7 @@ const WelcomeScreen = ({ chatbot, onSend, onVoiceStart, starting = false }) => (
   <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-8">
     <div className="w-full max-w-xl">
       <div className="flex flex-col items-center text-center">
-        <ChatbotTile chatbot={chatbot} className="size-16 rounded-3xl text-xl" />
+        <ChatbotProfile />
         <h2 className="mt-4 text-xl font-bold text-foreground">
           Hi, I&apos;m {chatbot.name}
         </h2>
@@ -98,7 +99,10 @@ const ChatPanel = ({
             <ArrowLeft size={16} />
           </Button>
           <div className="relative shrink-0">
-            <ChatbotTile chatbot={chatbot} className="size-10 rounded-xl text-sm" />
+            <ChatbotTile
+              chatbot={chatbot}
+              className="size-10 rounded-xl text-sm"
+            />
             <span
               className={cn(
                 "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-background",
