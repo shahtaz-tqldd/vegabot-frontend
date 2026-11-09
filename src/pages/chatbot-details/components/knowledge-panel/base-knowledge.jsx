@@ -15,66 +15,23 @@ import { Button } from "@/components/ui/button";
 import { EmBadge } from "@/components/ui/badge";
 import {
   useDeleteKnowledgeMutation,
-  useKnowledgeUsageQuery,
   useListKnowledgeQuery,
   useRetrainKnowledgeMutation,
 } from "@/features/knowledge/knowledgeApiSlice";
-import {
-  prettyFileSize,
-  sourceMeta,
-} from "@/features/knowledge/knowledge.helpers";
+import { sourceMeta } from "@/features/knowledge/knowledge.helpers";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import { cn } from "@/lib/utils";
 import TrainingActivity from "./training-activity";
 import UploadKnowledgeDialog from "./upload-knowledge-dialog";
 
-const UsageMeter = ({ chatbot }) => {
-  const { data: usage } = useKnowledgeUsageQuery(chatbot);
-
-  if (!usage || (!usage.chunksLimit && !usage.storageLimit)) return null;
-
-  const percent = usage.chunksLimit
-    ? Math.min(100, Math.round((usage.chunksUsed / usage.chunksLimit) * 100))
-    : 0;
-
-  return (
-    <div className="space-y-2 rounded-2xl border border-border bg-muted/20 px-4 py-3">
-      <div className="flx justify-between text-xs">
-        <span className="font-semibold text-foreground">Knowledge usage</span>
-        {usage.chunksLimit > 0 && (
-          <span className="text-muted-foreground">
-            {usage.chunksUsed.toLocaleString()} /{" "}
-            {usage.chunksLimit.toLocaleString()} chunks
-          </span>
-        )}
-      </div>
-      {usage.chunksLimit > 0 && (
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      )}
-      {usage.storageLimit > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          {prettyFileSize(usage.storageUsed) || "0 KB"} of{" "}
-          {prettyFileSize(usage.storageLimit)} file storage used
-        </p>
-      )}
-    </div>
-  );
-};
-
 const SOURCE_ICONS = {
-  url: { Icon: Globe, className: "bg-sky-500/10 text-sky-600" },
+  website: { Icon: Globe, className: "bg-sky-500/10 text-sky-600" },
   file: { Icon: FileText, className: "bg-violet-500/10 text-violet-600" },
-  custom: { Icon: TextQuote, className: "bg-amber-500/10 text-amber-600" },
+  text: { Icon: TextQuote, className: "bg-amber-500/10 text-amber-600" },
 };
 
 const BaseKnowledge = ({ chatbot }) => {
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [editingSource, setEditingSource] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const {
@@ -90,21 +47,12 @@ const BaseKnowledge = ({ chatbot }) => {
 
   const sources = listData?.sources ?? [];
 
-  const openUpload = (source = null) => {
-    setEditingSource(source);
-    setUploadOpen(true);
-  };
-
+  // Retrain is available for URL sources only — files and text are immutable.
   const handleRetry = async (source) => {
-    if (source.type === "custom") {
-      openUpload(source);
-      return;
-    }
-
     try {
       await retrainSource({
-        knowledgeBaseId: source.id,
-        type: source.type,
+        chatbot: chatbot.slug,
+        document: source.id,
       }).unwrap();
 
       toast.success(`Retraining “${source.title}”`);
@@ -119,7 +67,10 @@ const BaseKnowledge = ({ chatbot }) => {
     if (!deleteTarget) return;
 
     try {
-      await deleteSource(deleteTarget.id).unwrap();
+      await deleteSource({
+        chatbot: chatbot.slug,
+        document: deleteTarget.id,
+      }).unwrap();
       toast.success(`Removed “${deleteTarget.title}”`);
       setDeleteTarget(null);
     } catch (error) {
@@ -156,9 +107,7 @@ const BaseKnowledge = ({ chatbot }) => {
 
   return (
     <div className="space-y-5">
-      <UsageMeter chatbot={chatbot.slug} />
-
-      <Button className="w-full rounded-xl" onClick={() => openUpload()}>
+      <Button className="w-full rounded-xl" onClick={() => setUploadOpen(true)}>
         <Upload size={16} />
         Upload Knowledge
       </Button>
@@ -167,7 +116,7 @@ const BaseKnowledge = ({ chatbot }) => {
         <div className="space-y-2">
           {sources.map((source) => {
             const { Icon, className: iconClassName } =
-              SOURCE_ICONS[source.type] ?? SOURCE_ICONS.custom;
+              SOURCE_ICONS[source.type] ?? SOURCE_ICONS.text;
 
             return (
               <div
@@ -212,15 +161,17 @@ const BaseKnowledge = ({ chatbot }) => {
                     >
                       Failed
                     </EmBadge>
-                    <button
-                      type="button"
-                      aria-label={`Retry training ${source.title}`}
-                      disabled={isRetraining}
-                      onClick={() => handleRetry(source)}
-                      className="ml-1.5 center size-8 rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
-                    >
-                      <RotateCcw size={14} />
-                    </button>
+                    {source.retrainable && (
+                      <button
+                        type="button"
+                        aria-label={`Retry training ${source.title}`}
+                        disabled={isRetraining}
+                        onClick={() => handleRetry(source)}
+                        className="ml-1.5 center size-8 rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -253,14 +204,9 @@ const BaseKnowledge = ({ chatbot }) => {
       <TrainingActivity chatbot={chatbot.slug} />
 
       <UploadKnowledgeDialog
-        key={uploadOpen ? `upload-${editingSource?.id ?? "new"}` : "closed"}
         open={uploadOpen}
-        setOpen={(open) => {
-          if (!open) setEditingSource(null);
-          setUploadOpen(open);
-        }}
+        setOpen={setUploadOpen}
         chatbotSlug={chatbot.slug}
-        source={editingSource}
       />
 
       <ConfirmDialog

@@ -1,29 +1,43 @@
-import { useState } from "react";
-import { Package, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
+import { Package, Store, Trash2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { EmBadge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { removeProduct } from "@/mocks/chatbots";
+  useDisableProductsMutation,
+  useListProductsQuery,
+} from "@/features/knowledge/knowledgeApiSlice";
+import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import UploadProductsDialog from "./upload-products-dialog";
 
-const ProductsKnowledge = ({ chatbot, onChange }) => {
+const ProductsKnowledge = ({ chatbot }) => {
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const handleRemove = (product) => {
-    removeProduct(chatbot.slug, product.id);
-    onChange();
-    toast.success(`Removed “${product.name}”`);
-  };
+  const {
+    data: productsData,
+    isLoading,
+    isError,
+    refetch,
+  } = useListProductsQuery({ chatbot: chatbot.slug });
 
-  const products = chatbot.knowledge.products;
+  const [disableProducts, { isLoading: isDisabling }] =
+    useDisableProductsMutation();
+
+  const products = productsData?.products ?? [];
+
+  // Disabling removes the product (and its vectors) from search.
+  const handleDisable = async (product) => {
+    try {
+      await disableProducts({
+        chatbot: chatbot.slug,
+        products: [product.id],
+      }).unwrap();
+      toast.success(`Disabled “${product.name}”`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, `Failed to disable “${product.name}”`));
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -32,82 +46,83 @@ const ProductsKnowledge = ({ chatbot, onChange }) => {
         Upload Products
       </Button>
 
-      {products.length > 0 ? (
-        <div className="overflow-hidden rounded-2xl border border-border">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-11 pl-4 text-[11px] font-bold uppercase tracking-wide">
-                  Product
-                </TableHead>
-                <TableHead className="h-11 text-[11px] font-bold uppercase tracking-wide">
-                  Price
-                </TableHead>
-                <TableHead className="h-11 text-[11px] font-bold uppercase tracking-wide">
-                  Stock
-                </TableHead>
-                <TableHead className="h-11 pr-3 text-right text-[11px] font-bold uppercase tracking-wide">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id} className="border-border/70">
-                  <TableCell className="py-3 pl-4 pr-2">
-                    <div className="flx gap-2.5">
-                      <span className="center size-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                        <Package size={14} />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold text-foreground">
-                          {product.name}
-                        </p>
-                        <p className="truncate text-[11px] text-muted-foreground">
-                          {product.sku || "No SKU"} · {product.category}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="px-2 text-[13px] font-semibold">
-                    ${product.price}
-                  </TableCell>
-                  <TableCell className="px-2">
-                    {product.stock > 0 ? (
-                      <span className="text-[13px] text-muted-foreground">
-                        {product.stock}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold text-red-500">
-                        Out of stock
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-3 pl-2 pr-3 text-right">
-                    <button
-                      type="button"
-                      aria-label={`Remove ${product.name}`}
-                      onClick={() => handleRemove(product)}
-                      className="center size-8 rounded-full text-muted-foreground transition hover:bg-red-500/10 hover:text-red-500"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {isLoading ? (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
+          <p className="text-sm text-muted-foreground">Loading products…</p>
+        </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
+          <p className="text-sm font-semibold text-foreground">
+            Couldn't load products
+          </p>
+          <Button variant="outline" size="sm" className="mt-3 rounded-full" onClick={refetch}>
+            Try again
+          </Button>
+        </div>
+      ) : products.length > 0 ? (
+        <div className="space-y-2">
+          {products.map((product) => (
+            <div
+              key={product.id}
+              className="flx group rounded-2xl border border-border bg-background px-3.5 py-3 transition hover:border-primary/40"
+            >
+              <span className="center size-9 shrink-0 rounded-xl bg-primary/10 text-primary">
+                <Package size={15} />
+              </span>
+
+              <div className="min-w-0 flex-1 px-3">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {product.name}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {product.sku || "No SKU"} · {product.category || "General"}
+                </p>
+              </div>
+
+              <div className="flx shrink-0 gap-2">
+                {product.status === "processing" && (
+                  <EmBadge variant="primary-accent" size="xs">
+                    <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                    Training
+                  </EmBadge>
+                )}
+                {product.status === "failed" && (
+                  <EmBadge
+                    variant="transparent"
+                    size="xs"
+                    className="bg-red-500/10 text-red-500"
+                  >
+                    Failed
+                  </EmBadge>
+                )}
+                <span className="text-sm font-bold text-foreground">
+                  {product.price === 0
+                    ? "Free"
+                    : `${product.currency} ${product.price}`}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Disable ${product.name}`}
+                  disabled={isDisabling}
+                  onClick={() => handleDisable(product)}
+                  className="center size-8 rounded-full text-muted-foreground opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
           <span className="center mx-auto size-11 rounded-2xl bg-primary/10 text-primary">
-            <Package size={20} />
+            <Store size={20} />
           </span>
           <p className="mt-3 text-sm font-semibold text-foreground">
             No products yet
           </p>
           <p className="mx-auto mt-1 max-w-64 text-xs text-muted-foreground">
-            Upload the spreadsheet template — one row per product is all it
+            Import the spreadsheet template — one row per product is all it
             takes.
           </p>
         </div>
@@ -116,8 +131,7 @@ const ProductsKnowledge = ({ chatbot, onChange }) => {
       <UploadProductsDialog
         open={uploadOpen}
         setOpen={setUploadOpen}
-        chatbot={chatbot}
-        onChange={onChange}
+        chatbotSlug={chatbot.slug}
       />
     </div>
   );

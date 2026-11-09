@@ -17,26 +17,54 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  downloadSpreadsheetTemplate,
-  normalizeProductRows,
-  parseSpreadsheetRows,
-  PRODUCT_TEMPLATE,
-} from "@/lib/spreadsheet";
-import { addProducts } from "@/mocks/chatbots";
+  useImportProductsMutation,
+  useLazyDownloadProductTemplateQuery,
+} from "@/features/knowledge/knowledgeApiSlice";
+import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import { cn } from "@/lib/utils";
 
-const UploadProductsDialog = ({ open, setOpen, chatbot, onChange }) => {
+const TEMPLATE_COLUMNS = [
+  "name",
+  "sku",
+  "category",
+  "description",
+  "price",
+  "currency",
+  "product_url",
+];
+
+const saveBlob = (blob, fileName) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const UploadProductsDialog = ({ open, setOpen, chatbotSlug }) => {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const [importProducts, { isLoading: isImporting }] =
+    useImportProductsMutation();
+  const [downloadTemplate, { isFetching: isDownloading }] =
+    useLazyDownloadProductTemplateQuery();
 
   const closeDialog = () => setOpen(false);
 
-  const handleDownloadTemplate = () => {
-    downloadSpreadsheetTemplate(PRODUCT_TEMPLATE);
-    toast.success("Template downloaded", {
-      description: "Fill it in and upload it back — products sync instantly.",
-    });
+  const handleDownloadTemplate = async () => {
+    try {
+      const { data } = await downloadTemplate();
+
+      if (!data?.blob) return;
+
+      saveBlob(data.blob, data.fileName);
+      toast.success("Template downloaded", {
+        description: "Fill it in and upload it back — products sync instantly.",
+      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to download template"));
+    }
   };
 
   const handleUpload = async (fileList) => {
@@ -44,27 +72,37 @@ const UploadProductsDialog = ({ open, setOpen, chatbot, onChange }) => {
     if (!file) return;
 
     try {
-      setIsImporting(true);
-      const rows = normalizeProductRows(await parseSpreadsheetRows(file));
+      const response = await importProducts({
+        chatbot: chatbotSlug,
+        file,
+      }).unwrap();
 
-      if (!rows.length) {
-        toast.error("No products found in the file", {
-          description: `Make sure it follows the template columns: ${PRODUCT_TEMPLATE.headers.join(", ")}.`,
+      const payload = response?.data ?? {};
+      const created = payload.created_count ?? 0;
+      const rowErrors = payload.errors ?? [];
+
+      if (created) {
+        toast.success(`Imported ${created} product${created === 1 ? "" : "s"}`, {
+          description: rowErrors.length
+            ? `${rowErrors.length} row${rowErrors.length === 1 ? "" : "s"} skipped — check the file and re-import the rest.`
+            : "Queued for training — usable once trained.",
         });
-        return;
+        closeDialog();
+      } else {
+        toast.error("No products were imported", {
+          description:
+            rowErrors[0]?.error ??
+            rowErrors[0]?.message ??
+            `Make sure the file follows the template columns: ${TEMPLATE_COLUMNS.join(", ")}.`,
+        });
       }
-
-      addProducts(chatbot.slug, rows);
-      onChange();
-      toast.success(`Imported ${rows.length} product${rows.length === 1 ? "" : "s"}`);
-      closeDialog();
-    } catch {
-      toast.error("Couldn't read that file", {
-        description:
-          "Upload the .xlsx template or a CSV export with the same columns.",
-      });
-    } finally {
-      setIsImporting(false);
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(error) || "Couldn't read that file",
+        {
+          description: "Upload the CSV or XLSX template with the same columns.",
+        },
+      );
     }
   };
 
@@ -86,15 +124,16 @@ const UploadProductsDialog = ({ open, setOpen, chatbot, onChange }) => {
             </p>
             <ol className="list-decimal space-y-1 pl-9 text-xs leading-5 text-muted-foreground [&_b]:font-semibold [&_b]:text-foreground">
               <li>
-                Download the <b>template</b> spreadsheet below.
+                Download the <b>template</b> CSV below.
               </li>
               <li>
-                Fill in one row per product — required columns:{" "}
-                <b>{PRODUCT_TEMPLATE.headers.join(", ")}</b>.
+                Fill in one row per product — columns:{" "}
+                <b>{TEMPLATE_COLUMNS.join(", ")}</b>.
               </li>
               <li>
-                Upload the filled file back — the bot can then answer pricing,
-                stock and comparison questions.
+                Upload the filled file back — up to 5,000 rows. Valid rows are
+                queued for training; rows with duplicate SKUs or invalid values
+                are skipped and reported.
               </li>
             </ol>
           </div>
@@ -103,9 +142,10 @@ const UploadProductsDialog = ({ open, setOpen, chatbot, onChange }) => {
             variant="outline"
             className="w-full rounded-xl"
             onClick={handleDownloadTemplate}
+            disabled={isDownloading}
           >
             <FileSpreadsheet size={16} />
-            Download template
+            {isDownloading ? "Downloading…" : "Download template"}
           </Button>
 
           <button
@@ -136,7 +176,7 @@ const UploadProductsDialog = ({ open, setOpen, chatbot, onChange }) => {
               {isImporting ? "Importing…" : "Drop the file here or click to browse"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              CSV, XLSX or XLS — same columns as the template
+              CSV or XLSX — same columns as the template
             </p>
           </button>
           <input

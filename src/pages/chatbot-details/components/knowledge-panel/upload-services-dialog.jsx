@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import {
-  CalendarClock,
   FileSpreadsheet,
   FileUp,
   Info,
@@ -30,21 +29,38 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  downloadSpreadsheetTemplate,
-  normalizeServiceRows,
-  parseSpreadsheetRows,
-  SERVICE_TEMPLATE,
-} from "@/lib/spreadsheet";
-import { addServices } from "@/mocks/chatbots";
+  useBulkCreateServicesMutation,
+  useCreateServiceMutation,
+  useImportServicesMutation,
+  useLazyDownloadServiceTemplateQuery,
+} from "@/features/knowledge/knowledgeApiSlice";
+import { CURRENCY_OPTIONS } from "@/features/knowledge/knowledge.helpers";
+import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import { cn } from "@/lib/utils";
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
+const TEMPLATE_COLUMNS = [
+  "name",
+  "service_type",
+  "description",
+  "cost",
+  "currency",
+];
 
 const EMPTY_FORM = {
   name: "",
+  serviceType: "",
   description: "",
-  price: "",
-  durationMinutes: 30,
+  cost: "",
+  currency: "USD",
+};
+
+const saveBlob = (blob, fileName) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 };
 
 const SectionLabel = ({ icon, children }) => {
@@ -58,12 +74,22 @@ const SectionLabel = ({ icon, children }) => {
   );
 };
 
-const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
+const UploadServicesDialog = ({ open, setOpen, chatbotSlug }) => {
   const fileInputRef = useRef(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [pending, setPending] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+
+  const [importServices, { isLoading: isImporting }] =
+    useImportServicesMutation();
+  const [createService, { isLoading: isCreating }] =
+    useCreateServiceMutation();
+  const [bulkCreateServices, { isLoading: isBulkCreating }] =
+    useBulkCreateServicesMutation();
+  const [downloadTemplate, { isFetching: isDownloading }] =
+    useLazyDownloadServiceTemplateQuery();
+
+  const isSaving = isCreating || isBulkCreating;
 
   const closeDialog = () => {
     setForm(EMPTY_FORM);
@@ -71,11 +97,19 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
     setOpen(false);
   };
 
-  const handleDownloadTemplate = () => {
-    downloadSpreadsheetTemplate(SERVICE_TEMPLATE);
-    toast.success("Template downloaded", {
-      description: "One row per service, then upload it back here.",
-    });
+  const handleDownloadTemplate = async () => {
+    try {
+      const { data } = await downloadTemplate();
+
+      if (!data?.blob) return;
+
+      saveBlob(data.blob, data.fileName);
+      toast.success("Template downloaded", {
+        description: "One row per service, then upload it back here.",
+      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to download template"));
+    }
   };
 
   const handleUpload = async (fileList) => {
@@ -83,27 +117,34 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
     if (!file) return;
 
     try {
-      setIsImporting(true);
-      const rows = normalizeServiceRows(await parseSpreadsheetRows(file));
+      const response = await importServices({
+        chatbot: chatbotSlug,
+        file,
+      }).unwrap();
 
-      if (!rows.length) {
-        toast.error("No services found in the file", {
-          description: `Expected columns: ${SERVICE_TEMPLATE.headers.join(", ")}.`,
+      const payload = response?.data ?? {};
+      const created = payload.created_count ?? 0;
+      const rowErrors = payload.errors ?? [];
+
+      if (created) {
+        toast.success(`Imported ${created} service${created === 1 ? "" : "s"}`, {
+          description: rowErrors.length
+            ? `${rowErrors.length} row${rowErrors.length === 1 ? "" : "s"} skipped — check the file and re-import the rest.`
+            : "Queued for training — usable once trained.",
         });
-        return;
+        closeDialog();
+      } else {
+        toast.error("No services were imported", {
+          description:
+            rowErrors[0]?.error ??
+            rowErrors[0]?.message ??
+            `Expected columns: ${TEMPLATE_COLUMNS.join(", ")}.`,
+        });
       }
-
-      addServices(chatbot.slug, rows);
-      onChange();
-      toast.success(`Imported ${rows.length} service${rows.length === 1 ? "" : "s"}`);
-      closeDialog();
-    } catch {
-      toast.error("Couldn't read that file", {
-        description:
-          "Upload the .xlsx template or a CSV export with the same columns.",
+    } catch (error) {
+      toast.error(getApiErrorMessage(error) || "Couldn't read that file", {
+        description: "Upload the CSV or XLSX template with the same columns.",
       });
-    } finally {
-      setIsImporting(false);
     }
   };
 
@@ -117,23 +158,36 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
       ...current,
       {
         name: form.name.trim(),
+        service_type: form.serviceType.trim(),
         description: form.description.trim(),
-        price: Number(form.price) || 0,
-        durationMinutes: form.durationMinutes,
+        cost: Number(form.cost) || 0,
+        currency: form.currency,
       },
     ]);
     setForm(EMPTY_FORM);
   };
 
-  const handleSavePending = () => {
+  const handleSavePending = async () => {
     if (!pending.length) return;
 
-    addServices(chatbot.slug, pending);
-    onChange();
-    toast.success(
-      `Added ${pending.length} service${pending.length === 1 ? "" : "s"}`,
-    );
-    closeDialog();
+    try {
+      if (pending.length === 1) {
+        await createService({ chatbot: chatbotSlug, ...pending[0] }).unwrap();
+      } else {
+        await bulkCreateServices({
+          chatbot: chatbotSlug,
+          services: pending,
+        }).unwrap();
+      }
+
+      toast.success(
+        `Added ${pending.length} service${pending.length === 1 ? "" : "s"}`,
+        { description: "Queued for training — usable once trained." },
+      );
+      closeDialog();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to add services"));
+    }
   };
 
   return (
@@ -143,7 +197,7 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
           <DialogTitle>Add services</DialogTitle>
           <DialogDescription>
             Import several from a spreadsheet, or add them one at a time —
-            services the bot can explain and book.
+            services the bot can explain and offer.
           </DialogDescription>
         </DialogHeader>
 
@@ -154,10 +208,10 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
               Download the <b className="font-semibold text-foreground">template</b>,
               fill one row per service — columns:{" "}
               <b className="font-semibold text-foreground">
-                {SERVICE_TEMPLATE.headers.join(", ")}
+                {TEMPLATE_COLUMNS.join(", ")}
               </b>{" "}
-              — then upload it back. Or add services manually below, one at a
-              time or several in a row before saving.
+              — then upload it back (up to 5,000 rows). Or add services manually
+              below, one at a time or several in a row before saving.
             </p>
           </div>
 
@@ -170,9 +224,10 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
               variant="outline"
               className="w-full rounded-xl"
               onClick={handleDownloadTemplate}
+              disabled={isDownloading}
             >
               <FileSpreadsheet size={16} />
-              Download template
+              {isDownloading ? "Downloading…" : "Download template"}
             </Button>
 
             <button
@@ -203,7 +258,7 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
                 {isImporting ? "Importing…" : "Drop the file here or click to browse"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                CSV, XLSX or XLS — same columns as the template
+                CSV or XLSX — same columns as the template
               </p>
             </button>
             <input
@@ -227,6 +282,14 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
               placeholder="Service name, e.g. Personal training session"
               className="rounded-xl"
             />
+            <Input
+              value={form.serviceType}
+              onChange={(event) =>
+                setForm({ ...form, serviceType: event.target.value })
+              }
+              placeholder="Service type (optional), e.g. Consulting"
+              className="rounded-xl"
+            />
             <Textarea
               rows={2}
               value={form.description}
@@ -239,15 +302,15 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
             <div className="flx gap-3">
               <div className="flex-1">
                 <label className="mb-1.5 block text-xs font-semibold text-foreground">
-                  Price (USD)
+                  Cost
                 </label>
                 <Input
                   type="number"
                   min="0"
-                  step="1"
-                  value={form.price}
+                  step="0.01"
+                  value={form.cost}
                   onChange={(event) =>
-                    setForm({ ...form, price: event.target.value })
+                    setForm({ ...form, cost: event.target.value })
                   }
                   placeholder="0"
                   className="rounded-xl"
@@ -255,21 +318,21 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
               </div>
               <div className="flex-1">
                 <label className="mb-1.5 block text-xs font-semibold text-foreground">
-                  Duration
+                  Currency
                 </label>
                 <Select
-                  value={String(form.durationMinutes)}
+                  value={form.currency}
                   onValueChange={(value) =>
-                    setForm({ ...form, durationMinutes: Number(value) })
+                    setForm({ ...form, currency: value })
                   }
                 >
                   <SelectTrigger className="w-full rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DURATION_OPTIONS.map((minutes) => (
-                      <SelectItem key={minutes} value={String(minutes)}>
-                        {minutes} min
+                    {CURRENCY_OPTIONS.map((currency) => (
+                      <SelectItem key={currency} value={currency}>
+                        {currency}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -297,10 +360,15 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
                       <p className="truncate text-[13px] font-semibold text-foreground">
                         {service.name}
                       </p>
-                      <p className="flx gap-1.5 text-[11px] text-muted-foreground">
-                        <CalendarClock size={11} />
-                        {service.durationMinutes} min ·{" "}
-                        {service.price === 0 ? "Free" : `$${service.price}`}
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {[
+                          service.service_type,
+                          service.cost === 0
+                            ? "Free"
+                            : `${service.currency} ${service.cost}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                     </div>
                     <button
@@ -326,10 +394,12 @@ const UploadServicesDialog = ({ open, setOpen, chatbot, onChange }) => {
           <Button variant="outline" onClick={closeDialog}>
             Cancel
           </Button>
-          <Button onClick={handleSavePending} disabled={!pending.length}>
-            {pending.length
-              ? `Add ${pending.length} service${pending.length === 1 ? "" : "s"}`
-              : "Add services"}
+          <Button onClick={handleSavePending} disabled={!pending.length || isSaving}>
+            {isSaving
+              ? "Saving…"
+              : pending.length
+                ? `Add ${pending.length} service${pending.length === 1 ? "" : "s"}`
+                : "Add services"}
           </Button>
         </DialogFooter>
       </DialogContent>

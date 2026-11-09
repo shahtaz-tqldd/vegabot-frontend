@@ -1,6 +1,10 @@
 import { useState } from "react";
 
-import { useListKnowledgeQuery } from "@/features/knowledge/knowledgeApiSlice";
+import {
+  useListKnowledgeQuery,
+  useListProductsQuery,
+  useListServicesQuery,
+} from "@/features/knowledge/knowledgeApiSlice";
 import { cn } from "@/lib/utils";
 import BaseKnowledge from "./base-knowledge";
 import ProductsKnowledge from "./products-knowledge";
@@ -12,17 +16,23 @@ const SUB_TABS = [
   { value: "services", label: "Services" },
 ];
 
-const KnowledgePanel = ({ chatbot, onChange }) => {
+const KnowledgePanel = ({ chatbot }) => {
   const [activeSubTab, setActiveSubTab] = useState("base");
 
   const { data: baseData } = useListKnowledgeQuery({
     chatbot: chatbot.slug,
   });
+  const { data: productsData } = useListProductsQuery({
+    chatbot: chatbot.slug,
+  });
+  const { data: servicesData } = useListServicesQuery({
+    chatbot: chatbot.slug,
+  });
 
   const counts = {
-    base: baseData?.meta?.count ?? baseData?.sources?.length ?? 0,
-    products: chatbot.knowledge.products.length,
-    services: chatbot.knowledge.services.length,
+    base: baseData?.meta?.count ?? 0,
+    products: productsData?.meta?.count ?? 0,
+    services: servicesData?.meta?.count ?? 0,
   };
 
   return (
@@ -56,12 +66,8 @@ const KnowledgePanel = ({ chatbot, onChange }) => {
       </div>
 
       {activeSubTab === "base" && <BaseKnowledge chatbot={chatbot} />}
-      {activeSubTab === "products" && (
-        <ProductsKnowledge chatbot={chatbot} onChange={onChange} />
-      )}
-      {activeSubTab === "services" && (
-        <ServicesKnowledge chatbot={chatbot} onChange={onChange} />
-      )}
+      {activeSubTab === "products" && <ProductsKnowledge chatbot={chatbot} />}
+      {activeSubTab === "services" && <ServicesKnowledge chatbot={chatbot} />}
     </div>
   );
 };

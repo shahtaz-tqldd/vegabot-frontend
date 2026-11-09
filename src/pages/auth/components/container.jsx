@@ -71,17 +71,23 @@ const Intro = () => (
     </p>
 
     <ul className="mt-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-      {FEATURES.map(({ icon: Icon, title, text }) => (
-        <li key={title} className="flex gap-3">
-          <div className="center size-9 shrink-0 rounded-xl border border-border bg-background/70">
-            <Icon className="size-4 text-foreground" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">{title}</p>
-            <p className="text-sm text-muted-foreground">{text}</p>
-          </div>
-        </li>
-      ))}
+      {FEATURES.map((feature) => {
+        const Icon = feature.icon;
+
+        return (
+          <li key={feature.title} className="flex gap-3">
+            <div className="center size-9 shrink-0 rounded-xl border border-border bg-background/70">
+              <Icon className="size-4 text-foreground" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {feature.title}
+              </p>
+              <p className="text-sm text-muted-foreground">{feature.text}</p>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   </div>
 );

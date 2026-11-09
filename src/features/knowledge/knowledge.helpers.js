@@ -5,6 +5,7 @@ const TRAINING_STATUS_MAP = {
   processing: "processing",
   training: "processing",
   indexing: "processing",
+  ready: "trained",
   trained: "trained",
   completed: "trained",
   complete: "trained",
@@ -19,25 +20,40 @@ const TRAINING_STATUS_MAP = {
 export const normalizeTrainingStatus = (status) =>
   TRAINING_STATUS_MAP[String(status || "").toLowerCase()] ?? "processing";
 
-const SOURCE_TYPES = ["file", "url", "custom"];
+export const CURRENCY_OPTIONS = [
+  "USD",
+  "EUR",
+  "GBP",
+  "BDT",
+  "INR",
+  "AUD",
+  "CAD",
+  "JPY",
+];
 
-const inferType = (raw = {}) => {
-  if (SOURCE_TYPES.includes(raw.type)) return raw.type;
-  if (raw.url) return "url";
-  if (raw.file) return "file";
-  return "custom";
+// The API's source types are file | website | text; accept the legacy
+// url/custom spellings too so nothing breaks mid-rollout.
+const normalizeSourceType = (value) => {
+  const type = String(value || "").toLowerCase();
+
+  if (type === "website" || type === "url") return "website";
+  if (type === "text" || type === "custom") return "text";
+  return "file";
 };
 
+const inferSourceType = (raw = {}) =>
+  normalizeSourceType(raw.source_type ?? raw.type ?? (raw.url ? "website" : "text"));
+
 const fallbackTitle = (raw = {}, type) => {
-  if (type === "url" && raw.url) {
+  if (type === "website" && raw.url) {
     try {
       return new URL(raw.url).hostname;
     } catch {
       return raw.url;
     }
   }
-  if (type === "file") return raw.title || "File";
-  return raw.title || "Custom text";
+  if (type === "file") return raw.title || raw.file_name || "File";
+  return raw.title || "Text source";
 };
 
 export const prettyFileSize = (bytes) => {
@@ -48,12 +64,14 @@ export const prettyFileSize = (bytes) => {
 
 // Map an API knowledge source to the shape used by the UI.
 export const normalizeKnowledgeSource = (raw = {}) => {
-  const type = inferType(raw);
+  const type = inferSourceType(raw);
 
   return {
     ...raw,
     id: raw.id ?? raw.knowledge_base_id ?? raw.uuid,
     type,
+    // Retrain is available for URL sources only.
+    retrainable: type === "website",
     title: raw.title || fallbackTitle(raw, type),
     hasCustomTitle: Boolean(raw.title),
     url: raw.url ?? null,
@@ -68,12 +86,42 @@ export const normalizeKnowledgeSource = (raw = {}) => {
 
 // Secondary line shown under a source's title.
 export const sourceMeta = (source = {}) => {
-  if (source.type === "url") return source.url ?? "";
+  if (source.type === "website") return source.url ?? "";
   if (source.type === "file") {
     return prettyFileSize(source.fileSize) || "File";
   }
-  return `${source.chunks || 0} chunk${source.chunks === 1 ? "" : "s"}`;
+  return `${source.chunks || 0} chunk${source.chunks === 1 ? "" : "s"} of text`;
 };
+
+// Map an API product row to the shape used by the UI.
+export const normalizeProduct = (raw = {}) => ({
+  ...raw,
+  id: raw.id ?? raw.uuid,
+  name: raw.name ?? "",
+  sku: raw.sku ?? "",
+  category: raw.category ?? "",
+  description: raw.description ?? "",
+  price: raw.price ?? 0,
+  currency: raw.currency ?? "USD",
+  productUrl: raw.product_url ?? raw.productUrl ?? null,
+  status: normalizeTrainingStatus(raw.status),
+  createdAt: raw.created_at,
+  updatedAt: raw.updated_at,
+});
+
+// Map an API service row to the shape used by the UI.
+export const normalizeService = (raw = {}) => ({
+  ...raw,
+  id: raw.id ?? raw.uuid,
+  name: raw.name ?? "",
+  serviceType: raw.service_type ?? raw.serviceType ?? "",
+  description: raw.description ?? "",
+  cost: raw.cost ?? 0,
+  currency: raw.currency ?? "USD",
+  status: normalizeTrainingStatus(raw.status),
+  createdAt: raw.created_at,
+  updatedAt: raw.updated_at,
+});
 
 // Map an API training log to the shape used by the UI.
 export const normalizeTrainingLog = (raw = {}) => {
@@ -96,31 +144,3 @@ export const normalizeTrainingLog = (raw = {}) => {
     createdAt: raw.created_at ?? raw.timestamp,
   };
 };
-
-const firstDefined = (candidates, fallback) =>
-  candidates.find((value) => value !== undefined && value !== null) ?? fallback;
-
-// Map an API usage summary to the shape used by the UI.
-export const normalizeKnowledgeUsage = (raw = {}) => ({
-  chunksUsed: Number(
-    firstDefined(
-      [raw.chunks_used, raw.used_chunks, raw.chunks, raw.total_chunks],
-      0,
-    ),
-  ),
-  chunksLimit: Number(
-    firstDefined([raw.chunks_limit, raw.max_chunks, raw.chunk_limit], 0),
-  ),
-  storageUsed: Number(
-    firstDefined(
-      [raw.file_size_used, raw.storage_used, raw.used_file_size, raw.file_size],
-      0,
-    ),
-  ),
-  storageLimit: Number(
-    firstDefined(
-      [raw.file_size_limit, raw.storage_limit, raw.max_file_size],
-      0,
-    ),
-  ),
-});

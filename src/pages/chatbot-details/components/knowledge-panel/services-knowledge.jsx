@@ -1,22 +1,41 @@
 import { useState } from "react";
-import { CalendarClock, Trash2, Upload, Wrench } from "lucide-react";
+import { Sparkles, Trash2, Upload, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { EmBadge } from "@/components/ui/badge";
-import { removeService } from "@/mocks/chatbots";
+import {
+  useDeleteServiceMutation,
+  useListServicesQuery,
+} from "@/features/knowledge/knowledgeApiSlice";
+import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import UploadServicesDialog from "./upload-services-dialog";
 
-const ServicesKnowledge = ({ chatbot, onChange }) => {
+const ServicesKnowledge = ({ chatbot }) => {
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const handleRemove = (service) => {
-    removeService(chatbot.slug, service.id);
-    onChange();
-    toast.success(`Removed “${service.name}”`);
-  };
+  const {
+    data: servicesData,
+    isLoading,
+    isError,
+    refetch,
+  } = useListServicesQuery({ chatbot: chatbot.slug });
 
-  const services = chatbot.knowledge.services;
+  const [deleteService, { isLoading: isDeleting }] = useDeleteServiceMutation();
+
+  const services = servicesData?.services ?? [];
+
+  const handleRemove = async (service) => {
+    try {
+      await deleteService({
+        chatbot: chatbot.slug,
+        service: service.id,
+      }).unwrap();
+      toast.success(`Removed “${service.name}”`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, `Failed to remove “${service.name}”`));
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -25,7 +44,20 @@ const ServicesKnowledge = ({ chatbot, onChange }) => {
         Add Services
       </Button>
 
-      {services.length > 0 ? (
+      {isLoading ? (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
+          <p className="text-sm text-muted-foreground">Loading services…</p>
+        </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
+          <p className="text-sm font-semibold text-foreground">
+            Couldn't load services
+          </p>
+          <Button variant="outline" size="sm" className="mt-3 rounded-full" onClick={refetch}>
+            Try again
+          </Button>
+        </div>
+      ) : services.length > 0 ? (
         <div className="space-y-2">
           {services.map((service) => (
             <div
@@ -41,21 +73,41 @@ const ServicesKnowledge = ({ chatbot, onChange }) => {
                   {service.name}
                 </p>
                 <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                  {service.description || "No description"}
+                  {service.description || service.serviceType || "No description"}
                 </p>
               </div>
 
               <div className="flx shrink-0 gap-2">
+                {service.status === "processing" && (
+                  <EmBadge variant="primary-accent" size="xs">
+                    <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                    Training
+                  </EmBadge>
+                )}
+                {service.status === "failed" && (
+                  <EmBadge
+                    variant="transparent"
+                    size="xs"
+                    className="bg-red-500/10 text-red-500"
+                  >
+                    Failed
+                  </EmBadge>
+                )}
+                {service.serviceType && (
+                  <EmBadge variant="primary-accent" size="xs">
+                    <Sparkles size={11} />
+                    {service.serviceType}
+                  </EmBadge>
+                )}
                 <span className="text-sm font-bold text-foreground">
-                  {service.price === 0 ? "Free" : `$${service.price}`}
+                  {service.cost === 0
+                    ? "Free"
+                    : `${service.currency} ${service.cost}`}
                 </span>
-                <EmBadge variant="primary-accent" size="xs">
-                  <CalendarClock size={11} />
-                  {service.durationMinutes}m
-                </EmBadge>
                 <button
                   type="button"
                   aria-label={`Remove ${service.name}`}
+                  disabled={isDeleting}
                   onClick={() => handleRemove(service)}
                   className="center size-8 rounded-full text-muted-foreground opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
                 >
@@ -82,8 +134,7 @@ const ServicesKnowledge = ({ chatbot, onChange }) => {
       <UploadServicesDialog
         open={uploadOpen}
         setOpen={setUploadOpen}
-        chatbot={chatbot}
-        onChange={onChange}
+        chatbotSlug={chatbot.slug}
       />
     </div>
   );

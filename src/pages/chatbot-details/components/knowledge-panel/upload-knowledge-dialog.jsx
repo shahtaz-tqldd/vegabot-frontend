@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import {
   BookOpen,
-  FileText,
   FileUp,
   Link2,
   TextQuote,
@@ -21,9 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  useRetrainKnowledgeMutation,
-  useUploadKnowledgeCustomMutation,
   useUploadKnowledgeFileMutation,
+  useUploadKnowledgeTextMutation,
   useUploadKnowledgeUrlMutation,
 } from "@/features/knowledge/knowledgeApiSlice";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
@@ -41,9 +39,6 @@ const countSettled = (results) => {
 
   return { succeeded, failed: results.length - succeeded };
 };
-
-const DIALOG_BODY_CLASSES =
-  "grid max-h-[min(70vh,32rem)] grid-rows-[auto_minmax(0,1fr)] gap-4";
 
 const UrlsTab = ({ chatbotSlug, onDone }) => {
   const [value, setValue] = useState("");
@@ -72,7 +67,7 @@ const UrlsTab = ({ chatbotSlug, onDone }) => {
 
     if (succeeded) {
       toast.success(`${succeeded} URL${succeeded === 1 ? "" : "s"} added`, {
-        description: "Training started — sources become usable once trained.",
+        description: "Pages will be scraped and trained into the base.",
       });
     }
     if (failed) {
@@ -97,7 +92,7 @@ const UrlsTab = ({ chatbotSlug, onDone }) => {
         className="rounded-xl"
       />
       <p className="text-xs text-muted-foreground">
-        One URL per line — pages will be crawled and trained into the base
+        One URL per line — pages are scraped, chunked and trained into the base
         knowledge.
       </p>
       <Button
@@ -106,25 +101,20 @@ const UrlsTab = ({ chatbotSlug, onDone }) => {
         className="ml-auto rounded-xl"
       >
         <Link2 size={15} />
-        {isLoading ? "Adding…" : `Add ${urls.length ? `${urls.length} URL${urls.length === 1 ? "" : "s"}` : "URLs"}`}
+        {isLoading
+          ? "Adding…"
+          : `Add ${urls.length ? `${urls.length} URL${urls.length === 1 ? "" : "s"}` : "URLs"}`}
       </Button>
     </div>
   );
 };
 
-// Adds a new custom-text source, or replaces + retrains one when `source` is
-// passed (used as the retry flow for failed custom sources).
-const TextTab = ({ chatbotSlug, source, onDone }) => {
-  const [title, setTitle] = useState(
-    source?.hasCustomTitle ? source.title : "",
-  );
-  const [content, setContent] = useState(source?.content ?? "");
-  const [uploadCustom, { isLoading: isUploading }] =
-    useUploadKnowledgeCustomMutation();
-  const [retrain, { isLoading: isRetraining }] =
-    useRetrainKnowledgeMutation();
-
-  const isLoading = isUploading || isRetraining;
+// Text sources are immutable once created — replace by deleting and
+// re-adding.
+const TextTab = ({ chatbotSlug, onDone }) => {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [uploadText, { isLoading }] = useUploadKnowledgeTextMutation();
 
   const handleSubmit = async () => {
     const trimmed = content.trim();
@@ -135,27 +125,15 @@ const TextTab = ({ chatbotSlug, source, onDone }) => {
     }
 
     try {
-      if (source) {
-        await retrain({
-          knowledgeBaseId: source.id,
-          type: "custom",
-          content: trimmed,
-          ...(title.trim() ? { title: title.trim() } : {}),
-        }).unwrap();
+      await uploadText({
+        chatbot: chatbotSlug,
+        content: trimmed,
+        ...(title.trim() ? { title: title.trim() } : {}),
+      }).unwrap();
 
-        toast.success(`Retraining “${source.title}”`);
-      } else {
-        await uploadCustom({
-          chatbot: chatbotSlug,
-          content: trimmed,
-          ...(title.trim() ? { title: title.trim() } : {}),
-        }).unwrap();
-
-        toast.success("Text added", {
-          description: "Training started — it becomes usable once trained.",
-        });
-      }
-
+      toast.success("Text added", {
+        description: "Training started — it becomes usable once trained.",
+      });
       onDone();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save text source"));
@@ -178,15 +156,15 @@ const TextTab = ({ chatbotSlug, source, onDone }) => {
         className="rounded-xl"
       />
       <p className="text-xs text-muted-foreground">
-        Policies, FAQs, notes — the text will be chunked and trained into the
-        knowledge base.
+        Policies, FAQs, notes — up to 200,000 characters, chunked and trained
+        into the knowledge base.
       </p>
       <Button
         onClick={handleSubmit}
         disabled={isLoading}
         className="ml-auto rounded-xl"
       >
-        {isLoading ? "Saving…" : source ? "Retrain" : "Add text"}
+        {isLoading ? "Saving…" : "Add text"}
       </Button>
     </div>
   );
@@ -250,14 +228,15 @@ const FilesTab = ({ chatbotSlug, onDone }) => {
           {isLoading ? "Uploading…" : "Drop files here or click to browse"}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          PDF, DOC, DOCX, TXT, MD or CSV — up to 20 MB each
+          PDF, DOCX, XLSX, CSV, JSON or XML — stored privately and queued for
+          training
         </p>
       </button>
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.txt,.md,.csv"
+        accept=".pdf,.docx,.xlsx,.csv,.json,.xml"
         className="sr-only"
         onChange={(event) => {
           handleFiles(event.target.files);
@@ -270,34 +249,25 @@ const FilesTab = ({ chatbotSlug, onDone }) => {
         disabled={isLoading}
         className="mx-auto rounded-xl"
       >
-        <FileText size={15} />
         Browse files
       </Button>
     </div>
   );
 };
 
-const UploadKnowledgeDialog = ({
-  open,
-  setOpen,
-  chatbotSlug,
-  source = null,
-}) => {
-  const [activeTab, setActiveTab] = useState(source ? "text" : "urls");
+const UploadKnowledgeDialog = ({ open, setOpen, chatbotSlug }) => {
+  const [activeTab, setActiveTab] = useState("urls");
 
   const closeDialog = () => setOpen(false);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        className={cn("rounded-3xl sm:max-w-lg", DIALOG_BODY_CLASSES)}
-      >
+      <DialogContent className="grid max-h-[min(70vh,32rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-4 rounded-3xl sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Upload knowledge</DialogTitle>
           <DialogDescription>
-            {source
-              ? "Fix the content below and retrain this text source."
-              : "Add URLs, paste text or upload documents — everything trains into the base knowledge."}
+            Add URLs, paste text or upload documents — everything trains into
+            the base knowledge.
           </DialogDescription>
         </DialogHeader>
 
@@ -305,20 +275,17 @@ const UploadKnowledgeDialog = ({
           <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
             {MODAL_TABS.map((tab) => {
               const Icon = tab.icon;
-              const disabled = Boolean(source) && tab.value !== "text";
 
               return (
                 <button
                   key={tab.value}
                   type="button"
-                  disabled={disabled}
                   onClick={() => setActiveTab(tab.value)}
                   className={cn(
                     "flx justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition",
                     activeTab === tab.value
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
-                    disabled && "cursor-not-allowed opacity-50",
                   )}
                 >
                   <Icon size={14} />
@@ -332,11 +299,7 @@ const UploadKnowledgeDialog = ({
             <UrlsTab chatbotSlug={chatbotSlug} onDone={closeDialog} />
           )}
           {activeTab === "text" && (
-            <TextTab
-              chatbotSlug={chatbotSlug}
-              source={source}
-              onDone={closeDialog}
-            />
+            <TextTab chatbotSlug={chatbotSlug} onDone={closeDialog} />
           )}
           {activeTab === "files" && (
             <FilesTab chatbotSlug={chatbotSlug} onDone={closeDialog} />

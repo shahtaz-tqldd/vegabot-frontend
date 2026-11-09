@@ -10,20 +10,12 @@ import { useNotifications } from "@/features/notifications/useNotifications";
 import useTitle from "@/hooks/useTitle";
 import useUrlTab from "@/hooks/useUrlTab";
 import { cn } from "@/lib/utils";
-import { ensureChatbot } from "@/mocks/chatbots";
 import ChatPanel from "./components/chat-panel";
 import ChatbotInfoHeader from "./components/chatbot-info-header";
 import ConfigForm from "./components/config-form";
 import KnowledgePanel from "./components/knowledge-panel";
 import SessionList from "./components/session-list";
 import useChatSessions from "./hooks/use-chat-sessions";
-
-const hasKnowledge = (knowledge) =>
-  Boolean(
-    knowledge?.base?.length ||
-    knowledge?.products?.length ||
-    knowledge?.services?.length,
-  );
 
 const DETAIL_TABS = [
   { value: "chat", label: "Chat Session", icon: MessageSquare },
@@ -33,9 +25,8 @@ const DETAIL_TABS = [
 
 const ChatbotDetailsPage = () => {
   const { chatbotSlug } = useParams();
-  const { data, isLoading, isError, refetch } =
+  const { data: chatbot, isLoading, isError } =
     useChatbotDetailsQuery(chatbotSlug);
-  const [, refreshKnowledge] = useState(0);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [activeTab, setActiveTab] = useUrlTab({
     tabs: DETAIL_TABS,
@@ -45,21 +36,6 @@ const ChatbotDetailsPage = () => {
   // Training finishes asynchronously — keep knowledge queries fresh from
   // training_complete notifications.
   useNotifications();
-
-  const slug = data?.slug;
-  const name = data?.name;
-
-  // Knowledge editing still runs on the local demo store until the knowledge
-  // endpoints ship — seed an empty shell (idempotent) for API-backed chatbots
-  // and rebuild on every render so demo changes are picked up.
-  const chatbot = data
-    ? {
-        ...data,
-        knowledge: hasKnowledge(data.knowledge)
-          ? data.knowledge
-          : ensureChatbot({ slug, name }).knowledge,
-      }
-    : null;
 
   const chat = useChatSessions(chatbot);
 
@@ -92,12 +68,6 @@ const ChatbotDetailsPage = () => {
       </div>
     );
   }
-
-  // Re-render with fresh local knowledge after knowledge demo changes.
-  const refreshChatbot = () => {
-    refreshKnowledge((version) => version + 1);
-    refetch();
-  };
 
   const handleSelectSession = (sessionId) => {
     chat.selectSession(sessionId);
@@ -152,7 +122,7 @@ const ChatbotDetailsPage = () => {
 
           {activeTab === "training" && (
             <ScrollContainer className="px-4 py-5">
-              <KnowledgePanel chatbot={chatbot} onChange={refreshChatbot} />
+              <KnowledgePanel chatbot={chatbot} />
             </ScrollContainer>
           )}
         </aside>
