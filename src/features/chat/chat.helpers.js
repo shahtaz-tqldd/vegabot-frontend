@@ -15,6 +15,19 @@ export const normalizeAttachment = (raw = {}) => ({
   createdAt: raw.created_at ?? raw.createdAt,
 });
 
+export const normalizeRecommendation = (raw = {}) => ({
+  type: raw.type,
+  id: raw.id,
+  name: raw.name ?? "",
+  description: raw.description ?? "",
+  price: raw.price ?? null,
+  currency: raw.currency ?? "",
+  url: raw.url ?? "",
+  sku: raw.sku ?? "",
+  category: raw.category ?? "",
+  serviceType: raw.service_type ?? raw.serviceType ?? "",
+});
+
 export const normalizeMessage = (raw = {}) => {
   const senderType = raw.sender_type ?? raw.senderType;
 
@@ -23,8 +36,10 @@ export const normalizeMessage = (raw = {}) => {
     id: raw.id,
     senderType,
     role: toRole(senderType),
+    mode: raw.mode ?? "text",
     content: raw.content ?? "",
     attachments: (raw.attachments ?? []).map(normalizeAttachment),
+    recommendations: (raw.recommendations ?? []).map(normalizeRecommendation),
     responseTimeMs: raw.response_time_ms ?? raw.responseTimeMs,
     time: raw.created_at ?? raw.createdAt ?? null,
   };

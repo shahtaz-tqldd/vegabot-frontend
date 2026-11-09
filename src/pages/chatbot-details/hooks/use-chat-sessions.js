@@ -1,59 +1,140 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDispatch } from "react-redux";
 import { toast } from "sonner";
 
+import { apiSlice } from "@/features/api/apiSlice";
 import {
   useChatSessionDetailsQuery,
   useCreateChatSessionMutation,
   useDeleteChatSessionMutation,
   useListChatSessionsQuery,
-  useSendChatMessageMutation,
 } from "@/features/chat/chatApiSlice";
-import { useChatSocket } from "@/features/chat/useChatSocket";
-import { useLiveVoice } from "@/features/chat/useLiveVoice";
+import {
+  normalizeMessage,
+  normalizeRecommendation,
+} from "@/features/chat/chat.helpers";
+import { useChatConnection } from "@/features/chat/useChatConnection";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
 
 const LOCAL_WELCOME_ID = "local-welcome";
 let localCounter = 0;
+let orderCounter = 0;
 
-// Ephemeral, client-only messages (the welcome greeting) never hit the API —
-// they get throwaway ids so they survive the history merge.
-const buildLocalMessage = (role, content) => {
-  localCounter += 1;
-
-  return {
-    id: `local-${Date.now()}-${localCounter}`,
-    senderType: role === "bot" ? "agent" : "user",
-    role,
-    content,
-    attachments: [],
-    time: new Date().toISOString(),
-  };
+// Client-side ordering for live messages. Socket events don't always arrive
+// in conversation order (a voice transcript can finalize after the reply
+// started streaming), so each live item is stamped with when it *began* —
+// the user starting to talk, a reply starting — and the tail is sorted by it.
+const nextOrder = () => {
+  orderCounter += 1;
+  return orderCounter;
 };
 
-// Server history first, live/appended messages after, deduped by id. The
-// local welcome greeting (when present) always leads the timeline.
-const mergeMessages = (history = [], local = []) => {
-  const seen = new Set(history.map((message) => message.id).filter(Boolean));
-  const unseen = local.filter(
-    (message) => !message.id || !seen.has(message.id),
-  );
-  const welcome = unseen.find((message) => message.id === LOCAL_WELCOME_ID);
-  const rest = unseen.filter((message) => message.id !== LOCAL_WELCOME_ID);
+const nextLocalId = (prefix) => {
+  localCounter += 1;
+  return `${prefix}-${Date.now()}-${localCounter}`;
+};
 
-  return [...(welcome ? [welcome] : []), ...history, ...rest];
+const buildLocalMessage = (role, content, extra = {}) => ({
+  id: nextLocalId("local"),
+  senderType: role === "bot" ? "agent" : "user",
+  role,
+  mode: "text",
+  content,
+  attachments: [],
+  recommendations: [],
+  time: new Date().toISOString(),
+  order: nextOrder(),
+  ...extra,
+});
+
+const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
+
+// Server history first, then live messages. Messages are keyed by id: a live
+// copy replaces the history copy in place (the newest version wins), unseen
+// ones follow in live order. The local welcome greeting always leads.
+const mergeMessages = (history = [], local = []) => {
+  const byId = new Map(local.map((message) => [message.id, message]));
+  const merged = history.map((message) => {
+    const live = byId.get(message.id);
+    if (!live) return message;
+    byId.delete(message.id);
+    return { ...message, ...live };
+  });
+  const rest = local.filter((message) => byId.has(message.id));
+  const welcome = rest.find((message) => message.id === LOCAL_WELCOME_ID);
+
+  return [
+    ...(welcome ? [welcome] : []),
+    ...merged,
+    ...rest.filter((message) => message.id !== LOCAL_WELCOME_ID).sort(byOrder),
+  ];
+};
+
+// Insert or replace by id; `replaceId` swaps a placeholder (optimistic bubble)
+// for its stored message. An explicit `order` wins; otherwise a replaced
+// message keeps its slot and a new one goes last.
+const upsertInto = (list = [], message, replaceId) => {
+  let index = list.findIndex((item) => item.id === message.id);
+  if (index === -1 && replaceId) {
+    index = list.findIndex((item) => item.id === replaceId);
+  }
+  if (index === -1) {
+    return [...list, { ...message, order: message.order ?? nextOrder() }];
+  }
+
+  const next = [...list];
+  const existing = list[index];
+  next[index] = {
+    ...existing,
+    ...message,
+    order: message.order ?? existing.order,
+    // Cards can arrive separately from the message (live event vs. stored
+    // copy) — never let an empty list wipe cards already shown.
+    recommendations: message.recommendations?.length
+      ? message.recommendations
+      : (existing.recommendations ?? []),
+  };
+  return replaceId && next[index].id !== replaceId
+    ? next.filter((item) => item.id !== replaceId)
+    : next;
 };
 
 /**
  * Owns the chat conversation state: the session list (REST), the active
- * session's timeline (REST history + live socket events), outbound messages
- * (REST send), and live voice calls over the session's live socket.
+ * session's timeline (REST history + socket events), and the one chat
+ * socket that carries both typed messages and voice.
  */
 const useChatSessions = (chatbot) => {
+  const dispatch = useDispatch();
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [localMessages, setLocalMessages] = useState({});
-  const [typingSessionId, setTypingSessionId] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [captions, setCaptions] = useState({ user: null, agent: null });
+  // Replies streaming in, keyed by turn_id: { content, seq, recommendations }.
+  const [turns, setTurns] = useState({});
+  // Live caption of what the user is saying (voice mode).
+  const [caption, setCaption] = useState(null);
+  // Timeline slot of the utterance the mic is hearing right now (voice mode).
+  const [talkOrder, setTalkOrder] = useState(null);
+  // A typed message is waiting for agent.response.started.
+  const [awaitingReply, setAwaitingReply] = useState(false);
+
+  // Optimistic user bubbles waiting for message.accepted, oldest first.
+  const pendingSendsRef = useRef([]);
+  // Timeline slots: when the user last started talking, the slot of the
+  // utterance being captioned, and each streaming reply's slot by turn_id.
+  const talkStartOrderRef = useRef(0);
+  const usedTalkOrderRef = useRef(0);
+  const captionOrderRef = useRef(null);
+  const turnOrdersRef = useRef({});
+  // Cards per turn_id (to carry onto the stored message), and the stored
+  // message id of each completed turn (for cards that arrive late).
+  const turnRecsRef = useRef({});
+  const turnMessageIdsRef = useRef({});
+  const sessionIdRef = useRef(null);
+
+  useEffect(() => {
+    sessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   const {
     data: sessionsData,
@@ -64,11 +145,11 @@ const useChatSessions = (chatbot) => {
 
   const [createSession] = useCreateChatSessionMutation();
   const [deleteSessionMutation] = useDeleteChatSessionMutation();
-  const [sendChatMessage] = useSendChatMessageMutation();
 
   const sessionDetails = useChatSessionDetailsQuery(activeSessionId, {
     skip: !activeSessionId,
   });
+  const refetchDetails = sessionDetails.refetch;
 
   const chatbotSlug = chatbot?.slug;
 
@@ -80,129 +161,340 @@ const useChatSessions = (chatbot) => {
     [sessionsData, chatbotSlug],
   );
 
-  const appendLocal = useCallback((sessionId, message) => {
-    setLocalMessages((current) => {
-      const existing = current[sessionId] ?? [];
-
-      if (message.id && existing.some((item) => item.id === message.id)) {
-        return current;
-      }
-
-      return { ...current, [sessionId]: [...existing, message] };
-    });
+  const upsertLocal = useCallback((sessionId, message, replaceId) => {
+    if (!sessionId) return;
+    setLocalMessages((current) => ({
+      ...current,
+      [sessionId]: upsertInto(current[sessionId], message, replaceId),
+    }));
   }, []);
 
-  // `chat.message.created` fires for every new message on both the text and
-  // live sockets — agent replies, voice finals and messages sent from other
-  // tabs alike. appendLocal dedupes by id, and voice captions for that
-  // channel drop as soon as the persisted message lands.
-  const handleIncomingMessage = useCallback(
-    (sessionId, message) => {
-      appendLocal(sessionId, message);
+  const removeLocal = useCallback((sessionId, id) => {
+    setLocalMessages((current) => ({
+      ...current,
+      [sessionId]: (current[sessionId] ?? []).filter((item) => item.id !== id),
+    }));
+  }, []);
 
-      if (message.role === "bot") {
-        setTypingSessionId((current) =>
-          current === sessionId ? null : current,
-        );
-      }
+  const resetLiveState = useCallback(() => {
+    setTurns({});
+    setCaption(null);
+    setAwaitingReply(false);
+    pendingSendsRef.current = [];
+    captionOrderRef.current = null;
+    turnOrdersRef.current = {};
+    turnRecsRef.current = {};
+    turnMessageIdsRef.current = {};
+    setTalkOrder(null);
+  }, []);
 
-      const channel = message.senderType;
-      if (channel === "user" || channel === "agent") {
-        setCaptions((current) =>
-          current[channel] ? { ...current, [channel]: null } : current,
-        );
+  // The utterance being transcribed sits where the user started talking —
+  // before any reply that began streaming after that.
+  const claimCaptionOrder = useCallback(() => {
+    if (captionOrderRef.current === null) {
+      const talkStart = talkStartOrderRef.current;
+      captionOrderRef.current =
+        talkStart > usedTalkOrderRef.current ? talkStart : nextOrder();
+      usedTalkOrderRef.current = captionOrderRef.current;
+    }
+    return captionOrderRef.current;
+  }, []);
+
+  const handleEvent = useCallback(
+    (event) => {
+      const sessionId = sessionIdRef.current;
+      const data = event.data ?? {};
+
+      switch (event.type) {
+        case "connection.reconnected":
+          // Socket events are not replayed: reload history, drop stale turns.
+          resetLiveState();
+          refetchDetails?.();
+          break;
+
+        case "message.accepted": {
+          const pendingId = pendingSendsRef.current.shift();
+          if (pendingId && event.message_id) {
+            upsertLocal(
+              sessionId,
+              { id: event.message_id, mode: event.mode ?? "text" },
+              pendingId,
+            );
+          }
+          break;
+        }
+
+        case "voice.transcript": {
+          const order = claimCaptionOrder();
+
+          if (data.partial) {
+            setCaption((current) => ({
+              text: `${current?.text ?? ""}${data.text ?? ""}`,
+              order,
+            }));
+          } else {
+            setCaption(null);
+            captionOrderRef.current = null;
+            if (data.message_id && data.text) {
+              upsertLocal(
+                sessionId,
+                buildLocalMessage("user", data.text, {
+                  id: data.message_id,
+                  mode: "audio",
+                  order,
+                }),
+              );
+            }
+          }
+          break;
+        }
+
+        case "agent.response.started": {
+          const order = nextOrder();
+          turnOrdersRef.current[data.turn_id] = order;
+          setAwaitingReply(false);
+          setTurns((current) => ({
+            ...current,
+            [data.turn_id]: {
+              order,
+              content: "",
+              seq: 0,
+              mode: data.mode ?? "text",
+              recommendations: [],
+              startedAt: new Date().toISOString(),
+            },
+          }));
+          break;
+        }
+
+        case "agent.response.delta":
+          setTurns((current) => {
+            const turn = current[data.turn_id];
+            if (!turn || data.sequence !== turn.seq + 1) return current;
+            return {
+              ...current,
+              [data.turn_id]: {
+                ...turn,
+                content: turn.content + (data.delta ?? ""),
+                seq: turn.seq + 1,
+              },
+            };
+          });
+          break;
+
+        // Sent once the reply text is complete — voice audio may still be
+        // playing — so the cards show under the reply while it streams.
+        case "agent.response.recommendations": {
+          const items = (data.items ?? []).map(normalizeRecommendation);
+          if (!items.length) break;
+
+          turnRecsRef.current[data.turn_id] = items;
+
+          // The turn already completed: attach to its stored message.
+          const storedId = turnMessageIdsRef.current[data.turn_id];
+          if (storedId) {
+            upsertLocal(sessionId, { id: storedId, recommendations: items });
+            break;
+          }
+
+          setTurns((current) => {
+            const turn = current[data.turn_id];
+            if (!turn) return current;
+            return {
+              ...current,
+              [data.turn_id]: { ...turn, recommendations: items },
+            };
+          });
+          break;
+        }
+
+        case "agent.response.completed": {
+          const order = turnOrdersRef.current[data.turn_id];
+          const liveRecs = turnRecsRef.current[data.turn_id];
+          delete turnOrdersRef.current[data.turn_id];
+          delete turnRecsRef.current[data.turn_id];
+          if (data.message) {
+            const message = normalizeMessage(data.message);
+            turnMessageIdsRef.current[data.turn_id] = message.id;
+            upsertLocal(sessionId, {
+              ...message,
+              recommendations: message.recommendations.length
+                ? message.recommendations
+                : (liveRecs ?? []),
+              ...(order ? { order } : {}),
+            });
+          }
+          setTurns((current) => {
+            const next = { ...current };
+            delete next[data.turn_id];
+            return next;
+          });
+          dispatch(
+            apiSlice.util.invalidateTags([
+              { type: "chat-sessions", id: "LIST" },
+            ]),
+          );
+          break;
+        }
+
+        case "agent.response.failed":
+          delete turnOrdersRef.current[data.turn_id];
+          delete turnRecsRef.current[data.turn_id];
+          setAwaitingReply(false);
+          setTurns((current) => {
+            const next = { ...current };
+            delete next[data.turn_id];
+            return next;
+          });
+          toast.error(
+            data.message ||
+              "The assistant could not answer right now. Please try again.",
+          );
+          break;
+
+        case "chat.message.created": {
+          const message = normalizeMessage(event.message ?? {});
+          const targetId = event.session_id ?? sessionId;
+          if (message.id) upsertLocal(targetId, message);
+          break;
+        }
+
+        case "error": {
+          // A rejected message.send was never stored: drop its bubble.
+          const isVoiceError =
+            event.code === "voice_unavailable" ||
+            event.code === "voice_failed";
+          if (!isVoiceError && pendingSendsRef.current.length) {
+            const pendingId = pendingSendsRef.current.shift();
+            removeLocal(sessionId, pendingId);
+            setAwaitingReply(false);
+          }
+
+          if (event.code === "voice_failed") {
+            toast.error("Voice ended unexpectedly — you can keep typing.");
+          } else if (event.code === "busy") {
+            toast.error(
+              event.message ||
+                "The assistant is still replying — try again in a moment.",
+            );
+          } else {
+            toast.error(event.message || "Something went wrong");
+          }
+          break;
+        }
+
+        default:
+          break;
       }
     },
-    [appendLocal],
+    [
+      claimCaptionOrder,
+      dispatch,
+      refetchDetails,
+      removeLocal,
+      resetLiveState,
+      upsertLocal,
+    ],
   );
 
-  useChatSocket({
+  const handleTalkingChange = useCallback((talking) => {
+    if (!talking) {
+      setTalkOrder(null);
+      return;
+    }
+    const order = nextOrder();
+    talkStartOrderRef.current = order;
+    setTalkOrder(order);
+  }, []);
+
+  const connection = useChatConnection({
     sessionId: activeSessionId,
-    onMessage: handleIncomingMessage,
-  });
-
-  const handleVoiceTranscript = useCallback((channel, text, partial) => {
-    if (channel !== "user" && channel !== "agent") return;
-
-    setCaptions((current) => ({ ...current, [channel]: { text, partial } }));
-  }, []);
-
-  const handleVoiceEnded = useCallback(() => {
-    setCaptions({ user: null, agent: null });
-  }, []);
-
-  const voice = useLiveVoice({
-    onMessage: handleIncomingMessage,
-    onTranscript: handleVoiceTranscript,
+    onEvent: handleEvent,
     onError: (message) => toast.error(message),
-    onEnded: handleVoiceEnded,
+    onTalkingChange: handleTalkingChange,
   });
-
-  const voiceActive = voice.status !== "idle";
 
   const activeSession = useMemo(() => {
     if (!activeSessionId) return null;
 
-    const messages = mergeMessages(
-      sessionDetails.data?.messages,
-      localMessages[activeSessionId],
-    );
+    // Streaming replies and the live caption are placed in the timeline by
+    // when they began, until their stored messages land.
+    const live = Object.entries(turns).map(([turnId, turn]) => ({
+      id: `turn-${turnId}`,
+      role: "bot",
+      senderType: "agent",
+      mode: turn.mode,
+      content: turn.content,
+      attachments: [],
+      recommendations: turn.recommendations,
+      time: turn.startedAt,
+      order: turn.order,
+      streaming: true,
+    }));
 
-    // During a voice call, live captions ride at the end of the timeline so
-    // the user sees what they're saying and what the agent replies. When the
-    // final transcript lands as chat.message.created, the caption is dropped
-    // (see handleVoiceMessage) and the persisted message takes its place.
-    if (voiceActive) {
-      const captionBubbles = [];
-
-      if (captions.user?.text) {
-        captionBubbles.push({
-          id: "caption-user",
-          role: "user",
-          senderType: "user",
-          content: captions.user.text,
-          attachments: [],
-          time: null,
-          partial: captions.user.partial,
-        });
-      }
-      if (captions.agent?.text) {
-        captionBubbles.push({
-          id: "caption-agent",
-          role: "bot",
-          senderType: "agent",
-          content: captions.agent.text,
-          attachments: [],
-          time: null,
-          partial: captions.agent.partial,
-        });
-      }
-
-      return {
-        id: activeSessionId,
-        messages: [...messages, ...captionBubbles],
-      };
+    // What the user is saying: the transcript as it arrives, or — before the
+    // first words are transcribed — an empty "hearing you" bubble. (Skipped
+    // while the agent talks so speaker bleed can't flash a ghost bubble.)
+    if (caption?.text) {
+      live.push({
+        id: "voice-caption",
+        role: "user",
+        senderType: "user",
+        mode: "audio",
+        content: caption.text,
+        attachments: [],
+        recommendations: [],
+        time: null,
+        order: caption.order,
+        partial: true,
+        listening: true,
+      });
+    } else if (talkOrder !== null && !connection.speaking) {
+      live.push({
+        id: "voice-listening",
+        role: "user",
+        senderType: "user",
+        mode: "audio",
+        content: "",
+        attachments: [],
+        recommendations: [],
+        time: null,
+        order: talkOrder,
+        partial: true,
+        listening: true,
+      });
     }
+
+    const messages = mergeMessages(sessionDetails.data?.messages, [
+      ...(localMessages[activeSessionId] ?? []),
+      ...live,
+    ]);
 
     return { id: activeSessionId, messages };
   }, [
     activeSessionId,
     sessionDetails.data,
     localMessages,
-    voiceActive,
-    captions,
+    turns,
+    caption,
+    talkOrder,
+    connection.speaking,
   ]);
 
-  const typing = Boolean(activeSessionId) && typingSessionId === activeSessionId;
+  const replying = awaitingReply || Object.keys(turns).length > 0;
 
-  const selectSession = useCallback((sessionId) => {
-    setActiveSessionId(sessionId);
-  }, []);
+  const selectSession = useCallback(
+    (sessionId) => {
+      resetLiveState();
+      setActiveSessionId(sessionId);
+    },
+    [resetLiveState],
+  );
 
   const startNewSession = useCallback(() => {
+    resetLiveState();
     setActiveSessionId(null);
-    setTypingSessionId(null);
-  }, []);
+  }, [resetLiveState]);
 
   // Shared by text and voice: guarantees an active session, creating one
   // (and seeding the greeting) when the user starts from the welcome screen.
@@ -218,7 +510,7 @@ const useChatSessions = (chatbot) => {
       setActiveSessionId(session.id);
 
       if (chatbot.welcomeMessage) {
-        appendLocal(session.id, {
+        upsertLocal(session.id, {
           ...buildLocalMessage("bot", chatbot.welcomeMessage),
           id: LOCAL_WELCOME_ID,
         });
@@ -231,45 +523,49 @@ const useChatSessions = (chatbot) => {
     } finally {
       setIsStarting(false);
     }
-  }, [activeSessionId, appendLocal, chatbot, createSession]);
+  }, [activeSessionId, chatbot, createSession, upsertLocal]);
 
+  // Typed messages go over the socket in either mode: answered in text when
+  // voice is off, spoken (with a transcript) when voice is on.
   const sendMessage = useCallback(
     async (content) => {
       const trimmed = (content ?? "").trim();
-      if (!trimmed) return;
+      if (!trimmed || replying) return;
 
       const sessionId = await ensureSession();
       if (!sessionId) return;
 
-      try {
-        const sent = await sendChatMessage({
-          session: sessionId,
-          content: trimmed,
-        }).unwrap();
+      const optimistic = buildLocalMessage("user", trimmed, {
+        id: nextLocalId("pending"),
+        mode: connection.voiceStatus === "off" ? "text" : "audio",
+      });
 
-        appendLocal(sessionId, sent);
-        setTypingSessionId(sessionId);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to send message"));
-      }
+      pendingSendsRef.current.push(optimistic.id);
+      upsertLocal(sessionId, optimistic);
+      setAwaitingReply(true);
+      connection.send(trimmed);
     },
-    [appendLocal, ensureSession, sendChatMessage],
+    [connection, ensureSession, replying, upsertLocal],
   );
 
-  const startVoice = useCallback(async () => {
-    if (voice.status !== "idle") return;
-
-    const sessionId = await ensureSession();
-    if (!sessionId) return;
-
-    try {
-      await voice.start(sessionId);
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(error, "Couldn't start the voice session"),
-      );
+  // Voice on/off. Turning voice on must start inside the click handler so
+  // audio playback is allowed; the session is created afterwards if needed.
+  const toggleVoice = useCallback(async () => {
+    if (connection.voiceStatus !== "off") {
+      connection.disableVoice();
+      return;
     }
-  }, [ensureSession, voice]);
+
+    const enabling = connection.enableVoice();
+    const sessionId = await ensureSession();
+
+    if (!sessionId) {
+      connection.disableVoice();
+      return;
+    }
+
+    await enabling;
+  }, [connection, ensureSession]);
 
   const deleteSession = useCallback(
     async (sessionId) => {
@@ -281,18 +577,17 @@ const useChatSessions = (chatbot) => {
           delete next[sessionId];
           return next;
         });
-        setTypingSessionId((current) =>
-          current === sessionId ? null : current,
-        );
-        setActiveSessionId((current) =>
-          current === sessionId ? null : current,
-        );
+        setActiveSessionId((current) => {
+          if (current !== sessionId) return current;
+          resetLiveState();
+          return null;
+        });
         toast.success("Conversation deleted");
       } catch (error) {
         toast.error(getApiErrorMessage(error, "Failed to delete conversation"));
       }
     },
-    [deleteSessionMutation],
+    [deleteSessionMutation, resetLiveState],
   );
 
   const isSessionLoading =
@@ -308,17 +603,19 @@ const useChatSessions = (chatbot) => {
     activeSession,
     activeSessionId,
     selectSession,
-    typing,
+    typing: awaitingReply,
+    replying,
     isStarting,
     isSessionLoading,
     sendMessage,
-    startVoice,
     voice: {
-      status: voice.status,
-      speaking: voice.speaking,
-      captions,
-      interrupt: voice.interrupt,
-      stop: voice.stop,
+      status: connection.voiceStatus,
+      muted: connection.muted,
+      speaking: connection.speaking,
+      hearingUser: connection.userTalking || Boolean(caption?.text),
+      getMicLevel: connection.getMicLevel,
+      toggle: toggleVoice,
+      toggleMute: connection.toggleMute,
     },
     startNewSession,
     deleteSession,

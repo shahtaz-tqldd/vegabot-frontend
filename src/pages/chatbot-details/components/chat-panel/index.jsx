@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import ChatbotTile from "../chatbot-tile";
 import Composer from "./composer";
 import MessageList from "./message-list";
-import VoiceCall from "./voice-call";
 import ChatbotProfile from "@/components/shared/chatbot";
 
 const SUGGESTED_PROMPTS = [
@@ -14,7 +13,7 @@ const SUGGESTED_PROMPTS = [
   "How much does it cost?",
 ];
 
-const WelcomeScreen = ({ chatbot, onSend, onVoiceStart, starting = false }) => (
+const WelcomeScreen = ({ chatbot, onSend, voice, starting = false }) => (
   <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-8">
     <div className="w-full max-w-xl">
       <div className="flex flex-col items-center text-center">
@@ -47,9 +46,8 @@ const WelcomeScreen = ({ chatbot, onSend, onVoiceStart, starting = false }) => (
 
       <Composer
         onSend={onSend}
-        onVoiceStart={onVoiceStart}
+        voice={voice}
         className="mt-6"
-        showNote={false}
         placeholder="Type your message…"
         disabled={starting}
       />
@@ -61,15 +59,15 @@ const ChatPanel = ({
   chatbot,
   session,
   typing,
+  replying = false,
   loading = false,
   starting = false,
   voice,
   onSend,
-  onVoiceStart,
   onNewSession,
   onBack,
 }) => {
-  const isVoiceCall = voice && voice.status !== "idle";
+  const voiceOn = voice && voice.status !== "off";
 
   // No session selected — greet the user and start a conversation from here.
   if (!session) {
@@ -78,7 +76,7 @@ const ChatPanel = ({
         <WelcomeScreen
           chatbot={chatbot}
           onSend={onSend}
-          onVoiceStart={onVoiceStart}
+          voice={voice}
           starting={starting}
         />
       </div>
@@ -98,18 +96,6 @@ const ChatPanel = ({
           >
             <ArrowLeft size={16} />
           </Button>
-          <div className="relative shrink-0">
-            <ChatbotTile
-              chatbot={chatbot}
-              className="size-10 rounded-xl text-sm"
-            />
-            <span
-              className={cn(
-                "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-background",
-                isVoiceCall ? "animate-pulse bg-red-500" : "bg-emerald-500",
-              )}
-            />
-          </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-foreground">
               {chatbot.name}
@@ -118,14 +104,16 @@ const ChatPanel = ({
               <span
                 className={cn(
                   "inline-block size-1.5 rounded-full",
-                  isVoiceCall ? "bg-red-500" : "bg-emerald-500",
+                  voiceOn ? "bg-primary" : "bg-emerald-500",
                 )}
               />
-              {isVoiceCall
-                ? voice.status === "connecting"
-                  ? "Starting voice call…"
-                  : "On a voice call"
-                : typing
+              {voiceOn
+                ? voice.status === "starting"
+                  ? "Starting voice…"
+                  : voice.muted
+                    ? "Voice on — mic muted"
+                    : "Voice on"
+                : replying
                   ? "Typing…"
                   : "Online — replies instantly"}
             </p>
@@ -137,7 +125,6 @@ const ChatPanel = ({
           size="icon-sm"
           aria-label="New session"
           onClick={onNewSession}
-          disabled={isVoiceCall}
         >
           <Plus size={16} />
         </Button>
@@ -156,21 +143,14 @@ const ChatPanel = ({
             chatbot={chatbot}
             messages={session.messages}
             typing={typing}
+            getMicLevel={voice?.getMicLevel}
           />
-          {isVoiceCall ? (
-            <VoiceCall
-              status={voice.status}
-              speaking={voice.speaking}
-              onInterrupt={voice.interrupt}
-              onEnd={voice.stop}
-            />
-          ) : (
-            <Composer
-              onSend={onSend}
-              onVoiceStart={onVoiceStart}
-              disabled={typing || loading}
-            />
-          )}
+          <Composer
+            onSend={onSend}
+            voice={voice}
+            disabled={loading}
+            sendDisabled={replying}
+          />
         </>
       )}
     </div>

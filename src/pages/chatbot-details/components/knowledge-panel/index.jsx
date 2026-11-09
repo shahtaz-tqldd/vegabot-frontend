@@ -1,10 +1,4 @@
-import { useState } from "react";
-
-import {
-  useListKnowledgeQuery,
-  useListProductsQuery,
-  useListServicesQuery,
-} from "@/features/knowledge/knowledgeApiSlice";
+import useUrlTab from "@/hooks/useUrlTab";
 import { cn } from "@/lib/utils";
 import BaseKnowledge from "./base-knowledge";
 import ProductsKnowledge from "./products-knowledge";
@@ -17,23 +11,11 @@ const SUB_TABS = [
 ];
 
 const KnowledgePanel = ({ chatbot }) => {
-  const [activeSubTab, setActiveSubTab] = useState("base");
-
-  const { data: baseData } = useListKnowledgeQuery({
-    chatbot: chatbot.slug,
+  const [activeSubTab, setActiveSubTab] = useUrlTab({
+    tabs: SUB_TABS,
+    defaultTab: "base",
+    paramName: "knowledge",
   });
-  const { data: productsData } = useListProductsQuery({
-    chatbot: chatbot.slug,
-  });
-  const { data: servicesData } = useListServicesQuery({
-    chatbot: chatbot.slug,
-  });
-
-  const counts = {
-    base: baseData?.meta?.count ?? 0,
-    products: productsData?.meta?.count ?? 0,
-    services: servicesData?.meta?.count ?? 0,
-  };
 
   return (
     <div className="space-y-5">
@@ -44,23 +26,13 @@ const KnowledgePanel = ({ chatbot }) => {
             type="button"
             onClick={() => setActiveSubTab(tab.value)}
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition",
+              "rounded-lg px-2 py-2 text-xs font-semibold transition",
               activeSubTab === tab.value
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             <span className="truncate">{tab.label}</span>
-            <span
-              className={cn(
-                "center h-4.5 min-w-4.5 rounded-full px-1 text-[10px] font-bold",
-                activeSubTab === tab.value
-                  ? "bg-primary/10 text-primary"
-                  : "bg-background/70 text-muted-foreground",
-              )}
-            >
-              {counts[tab.value]}
-            </span>
           </button>
         ))}
       </div>

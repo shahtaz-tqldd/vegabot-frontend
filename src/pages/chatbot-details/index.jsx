@@ -138,11 +138,11 @@ const ChatbotDetailsPage = () => {
             chatbot={chatbot}
             session={chat.activeSession}
             typing={chat.typing}
+            replying={chat.replying}
             loading={chat.isSessionLoading}
             starting={chat.isStarting}
             voice={chat.voice}
             onSend={chat.sendMessage}
-            onVoiceStart={chat.startVoice}
             onNewSession={handleNewSession}
             onBack={handleBack}
           />

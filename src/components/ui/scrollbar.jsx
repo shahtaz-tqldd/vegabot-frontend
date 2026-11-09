@@ -275,10 +275,10 @@ const ScrollContainer = React.forwardRef(function ScrollContainer(
             className={cn(
               "absolute right-0.5 w-1.5",
               "touch-none rounded-full",
-              "bg-primary/45",
+              "bg-primary",
               "transition-colors",
-              "hover:bg-primary/65",
-              "active:bg-primary/80",
+              "hover:bg-primary/85",
+              "active:bg-primary/85",
               isVisible ? "pointer-events-auto" : "pointer-events-none",
             )}
             style={{

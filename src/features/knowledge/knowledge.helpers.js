@@ -104,6 +104,7 @@ export const normalizeProduct = (raw = {}) => ({
   price: raw.price ?? 0,
   currency: raw.currency ?? "USD",
   productUrl: raw.product_url ?? raw.productUrl ?? null,
+  imageUrl: raw.image_url ?? raw.imageUrl ?? null,
   status: normalizeTrainingStatus(raw.status),
   createdAt: raw.created_at,
   updatedAt: raw.updated_at,

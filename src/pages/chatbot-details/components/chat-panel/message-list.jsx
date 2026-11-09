@@ -1,10 +1,13 @@
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FileText } from "lucide-react";
+import { ExternalLink, FileText, Mic } from "lucide-react";
 
+import { ScrollContainer } from "@/components/ui/scrollbar";
 import { cn } from "@/lib/utils";
 import ChatbotTile from "../chatbot-tile";
+import VoiceWave from "./voice-wave";
+import ChatbotProfile from "@/components/shared/chatbot";
 
 const prettyFileSize = (bytes = 0) => {
   if (!bytes) return "";
@@ -75,22 +78,105 @@ const MessageAttachments = ({ attachments }) => {
   );
 };
 
+// Price is shown exactly as sent, with its currency — never recomputed.
+const formatPrice = (price, currency) =>
+  price === null || price === undefined || price === ""
+    ? null
+    : [price, currency].filter(Boolean).join(" ");
+
+const RecommendationCard = ({ item }) => {
+  const price = formatPrice(item.price, item.currency);
+  const tag = item.type === "service" ? item.serviceType : item.category;
+  const Wrapper = item.url ? "a" : "div";
+
+  return (
+    <Wrapper
+      {...(item.url
+        ? { href: item.url, target: "_blank", rel: "noreferrer" }
+        : {})}
+      className={cn(
+        "flex w-56 shrink-0 flex-col rounded-xl border border-border bg-card p-3 text-left transition",
+        item.url && "hover:border-primary/40",
+      )}
+    >
+      <div className="flbx gap-2">
+        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+          {tag || item.type}
+        </span>
+        {item.url && (
+          <ExternalLink size={12} className="shrink-0 text-muted-foreground" />
+        )}
+      </div>
+      <p className="mt-2 line-clamp-1 text-sm font-semibold text-foreground">
+        {item.name}
+      </p>
+      {item.description && (
+        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+          {item.description}
+        </p>
+      )}
+      {price && (
+        <p className="mt-auto pt-2 text-sm font-bold text-foreground">
+          {price}
+        </p>
+      )}
+    </Wrapper>
+  );
+};
+
+const Recommendations = ({ items, animate = false }) => {
+  if (!items?.length) return null;
+
+  return (
+    <div
+      className={cn(
+        "custom-scrollbar mt-2 flex max-w-full gap-2 overflow-x-auto pb-1",
+        animate &&
+          "animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none",
+      )}
+    >
+      {items.map((item) => (
+        <RecommendationCard key={`${item.type}-${item.id}`} item={item} />
+      ))}
+    </div>
+  );
+};
+
+const TypingDots = () => (
+  <span className="flx gap-1.5 py-1.5">
+    {[0, 150, 300].map((delay) => (
+      <span
+        key={delay}
+        className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60"
+        style={{ animationDelay: `${delay}ms` }}
+      />
+    ))}
+  </span>
+);
+
 const TypingIndicator = ({ chatbot }) => (
   <div className="flx gap-2.5">
     <ChatbotTile chatbot={chatbot} className="size-8 rounded-lg text-[10px]" />
-    <div className="flx gap-1.5 rounded-2xl rounded-tl-sm bg-muted px-4 py-3.5">
-      {[0, 150, 300].map((delay) => (
-        <span
-          key={delay}
-          className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60"
-          style={{ animationDelay: `${delay}ms` }}
-        />
-      ))}
+    <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-2">
+      <TypingDots />
     </div>
   </div>
 );
 
-const MessageList = ({ chatbot, messages, typing }) => {
+// The user's in-progress utterance: live mic wave, plus the transcript as it
+// arrives.
+const ListeningContent = ({ content, getMicLevel }) => (
+  <span className="flex items-center gap-2.5">
+    <VoiceWave getLevel={getMicLevel} barClassName="bg-white" />
+    {content ? (
+      <span className="whitespace-pre-wrap">{content}</span>
+    ) : (
+      <span className="text-white/80">Listening…</span>
+    )}
+  </span>
+);
+
+const MessageList = ({ chatbot, messages, typing, getMicLevel }) => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -98,7 +184,7 @@ const MessageList = ({ chatbot, messages, typing }) => {
   }, [messages, typing]);
 
   return (
-    <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-6">
+    <ScrollContainer className="px-5 py-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         {messages.map((message) => {
           const isUser = message.role === "user";
@@ -106,21 +192,18 @@ const MessageList = ({ chatbot, messages, typing }) => {
           return (
             <div
               key={message.id}
-              className={cn("flx gap-2.5", isUser && "flex-row-reverse")}
+              className={cn("flex gap-2.5", isUser && "flex-row-reverse")}
             >
-              {isUser ? null : (
-                <ChatbotTile
-                  chatbot={chatbot}
-                  className="size-8 rounded-lg text-[10px]"
-                />
-              )}
+              {isUser ? null : <ChatbotProfile chatbot={chatbot} size="5" />}
 
               <div
                 className={cn(
                   "max-w-[82%] md:max-w-lg",
                   isUser && "flex flex-col items-end",
                 )}
-              >
+                >
+                {isUser ? null : <span className="font-semibold text-[10px] pb-1 pl-1 block">{chatbot.name}</span>}
+                
                 <div
                   className={cn(
                     "rounded-2xl px-4 py-2.5 text-sm leading-6 [&_li]:mt-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p+p]:mt-2 [&_p]:leading-6 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-4",
@@ -128,11 +211,18 @@ const MessageList = ({ chatbot, messages, typing }) => {
                       ? "rounded-tr-sm bg-primary text-white"
                       : "rounded-tl-sm bg-muted text-foreground",
                     // Live voice captions: interim speech renders transient.
-                    message.partial && "opacity-75",
+                    message.partial && !message.listening && "opacity-75",
                     message.partial && !isUser && "italic",
                   )}
                 >
-                  {message.content ? (
+                  {message.listening ? (
+                    <ListeningContent
+                      content={message.content}
+                      getMicLevel={getMicLevel}
+                    />
+                  ) : message.streaming && !message.content ? (
+                    <TypingDots />
+                  ) : message.content ? (
                     isUser ? (
                       <p className="whitespace-pre-wrap">{message.content}</p>
                     ) : (
@@ -143,12 +233,23 @@ const MessageList = ({ chatbot, messages, typing }) => {
                   ) : null}
                   <MessageAttachments attachments={message.attachments} />
                 </div>
+                <Recommendations
+                  items={message.recommendations}
+                  animate={message.streaming}
+                />
                 <span
                   className={cn(
-                    "mt-1 block px-1 text-[10px] text-muted-foreground",
-                    isUser ? "text-right" : "text-left",
+                    "mt-1 flx gap-1 px-1 text-[10px] text-muted-foreground",
+                    isUser && "justify-end",
                   )}
                 >
+                  {message.mode === "audio" && (
+                    <>
+                      <Mic size={10} aria-hidden />
+                      <span>Voice</span>
+                      {message.time && <span aria-hidden>·</span>}
+                    </>
+                  )}
                   {formatTime(message.time)}
                 </span>
               </div>
@@ -159,7 +260,7 @@ const MessageList = ({ chatbot, messages, typing }) => {
         {typing && <TypingIndicator chatbot={chatbot} />}
         <div ref={bottomRef} />
       </div>
-    </div>
+    </ScrollContainer>
   );
 };
 
