@@ -81,7 +81,7 @@ const RegisterPage = () => {
       description={
         <p>
           Register to start using your{" "}
-          <span className="text-primary font-medium">argon chatbot</span>{" "}
+          <span className="text-primary font-medium">vegabot</span>{" "}
           account
         </p>
       }

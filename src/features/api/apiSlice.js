@@ -90,7 +90,14 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: "apiSlice",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["my-profile", "profile-states", "chatbots", "knowledge"],
+  tagTypes: [
+    "my-profile",
+    "profile-states",
+    "chatbots",
+    "knowledge",
+    "chat-sessions",
+    "chat-messages",
+  ],
   keepUnusedDataFor: 300, // Don't keep any unused data
   refetchOnMountOrArgChange: false, // Always refetch when component mounts
   refetchOnReconnect: true, // Refetch on reconnection

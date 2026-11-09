@@ -1,11 +1,18 @@
-import React, { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { useForm, Controller, useWatch } from "react-hook-form";
+import { BadgeCheck, CheckCircle, Sparkles } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { FloatingInput } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 import { useLoginMutation } from "@/features/auth/authApiSlice";
 import { userLoggedIn } from "@/features/auth/authSlice";
@@ -22,14 +29,34 @@ const LoginPage = () => {
   const dispatch = useDispatch();
   const successMessage = location.state?.message;
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Credentials can arrive via query params (e.g. redirected from the resume
+  // app). Captured once so they survive the URL cleanup below.
+  const [prefill] = useState(() => ({
+    email: searchParams.get("email") || "",
+    password: searchParams.get("password") || "",
+  }));
+  const hasPrefill = Boolean(prefill.email && prefill.password);
+
+  // Scrub the credentials from the address bar once they're captured.
+  useEffect(() => {
+    if (!searchParams.has("email") && !searchParams.has("password")) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("email");
+    nextParams.delete("password");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const {
     handleSubmit,
     control,
     formState: { errors },
   } = useForm({
     defaultValues: {
-      email: "",
-      password: "",
+      email: prefill.email,
+      password: prefill.password,
       rememberMe: true,
     },
   });
@@ -84,8 +111,7 @@ const LoginPage = () => {
       description={
         <p>
           Sign in to access your{" "}
-          <span className="text-primary font-medium">argon chatbot</span>{" "}
-          account
+          <span className="text-primary font-medium">vegabot</span> account
         </p>
       }
     >
@@ -101,6 +127,20 @@ const LoginPage = () => {
       {!error && successMessage && (
         <div className="mb-6 -mt-6 rounded-lg border border-green-200 bg-green-100 p-2 text-center text-xs">
           <span className="text-green-700">{successMessage}</span>
+        </div>
+      )}
+
+      {hasPrefill && (
+        <div
+          className={cn(
+            "mb-6 flex items-center justify-center gap-2 rounded-lg bg-emerald-600/10 p-2 text-center text-xs",
+            !error && !successMessage && "-mt-2",
+          )}
+        >
+          <BadgeCheck className="size-3.5 text-emerald-600" />
+          <span className="font-medium text-emerald-600">
+            Credentials are auto-filled from your link
+          </span>
         </div>
       )}
 
@@ -161,28 +201,7 @@ const LoginPage = () => {
           )}
         />
 
-        <div className="flex items-center justify-between gap-4">
-          <Controller
-            name="rememberMe"
-            control={control}
-            render={({ field }) => (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="rememberMe"
-                  checked={field.value}
-                  onCheckedChange={(checked) =>
-                    field.onChange(Boolean(checked))
-                  }
-                />
-                <label
-                  htmlFor="rememberMe"
-                  className="cursor-pointer text-sm text-muted-foreground"
-                >
-                  Remember me
-                </label>
-              </div>
-            )}
-          />
+        <div className="ml-2">
           <Link
             to="/forgot-password"
             className="text-sm font-medium text-primary hover:underline"

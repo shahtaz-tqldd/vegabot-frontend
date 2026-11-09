@@ -1,4 +1,4 @@
-const DEFAULT_TITLE = "Argon Chatbot";
+const DEFAULT_TITLE = "Vegabot";
 
 let pageTitle = DEFAULT_TITLE;
 let unreadNotificationCount = 0;

@@ -135,6 +135,9 @@ const ChatbotDetailsPage = () => {
             <SessionList
               sessions={chat.sessions}
               activeSessionId={chat.activeSessionId}
+              isLoading={chat.isLoadingSessions}
+              isSessionsError={chat.isSessionsError}
+              onRetry={chat.refetchSessions}
               onSelect={handleSelectSession}
               onNewSession={handleNewSession}
               onDelete={chat.deleteSession}
@@ -165,9 +168,12 @@ const ChatbotDetailsPage = () => {
             chatbot={chatbot}
             session={chat.activeSession}
             typing={chat.typing}
+            loading={chat.isSessionLoading}
+            starting={chat.isStarting}
+            voice={chat.voice}
             onSend={chat.sendMessage}
+            onVoiceStart={chat.startVoice}
             onNewSession={handleNewSession}
-            onEndVoiceCall={chat.endVoiceCall}
             onBack={handleBack}
           />
         </main>

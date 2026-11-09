@@ -1,4 +1,4 @@
-# argon chatbot client
+# Vegabot frontend
 
 Simplified demo client for building and testing AI chatbots.
 

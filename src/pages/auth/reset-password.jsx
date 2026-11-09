@@ -56,7 +56,7 @@ const ResetPasswordPage = () => {
     <AuthContainer
       title="Set new password"
       description="Choose a new password for your
-      argon chatbot account."
+      vegabot account."
     >
       {error && (
         <div

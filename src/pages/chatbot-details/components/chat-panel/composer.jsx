@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { AudioLines, SendHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 const Composer = ({
   onSend,
+  onVoiceStart,
   disabled = false,
   className = "px-5 pb-5",
   showNote = true,
@@ -42,6 +43,19 @@ const Composer = ({
             disabled={disabled}
             className="max-h-36 min-h-0 flex-1 resize-none rounded-xl border-0 bg-transparent px-2.5 py-2.5 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
+          {onVoiceStart && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Start voice conversation"
+              onClick={onVoiceStart}
+              disabled={disabled}
+              className="rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            >
+              <AudioLines size={17} />
+            </Button>
+          )}
           <Button
             type="button"
             size="icon"

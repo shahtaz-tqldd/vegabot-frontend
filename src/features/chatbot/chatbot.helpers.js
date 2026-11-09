@@ -47,13 +47,29 @@ export const normalizeChatbot = (raw = {}) => ({
   timezone: raw.timezone,
   otherSettings: raw.other_settings ?? raw.otherSettings,
   logo: raw.logo ?? null,
+  isAdminCreated: raw.is_admin_created ?? raw.isAdminCreated ?? false,
+  trainedKnowledge: {
+    productCount:
+      raw.trained_knowledge?.product_count ??
+      raw.trainedKnowledge?.productCount ??
+      0,
+    serviceCount:
+      raw.trained_knowledge?.service_count ??
+      raw.trainedKnowledge?.serviceCount ??
+      0,
+    knowledgeSourceCount:
+      raw.trained_knowledge?.knowledge_source_count ??
+      raw.trainedKnowledge?.knowledgeSourceCount ??
+      0,
+  },
+  createdBy: raw.created_by ?? raw.createdBy ?? null,
   createdAt: raw.created_at ?? raw.createdAt,
   updatedAt: raw.updated_at ?? raw.updatedAt,
   stats: { conversations: 0, responses: 0, ...raw.stats },
   knowledge: raw.knowledge ?? emptyKnowledge(),
 });
 
-export const knowledgeCount = (chatbot) =>
-  (chatbot?.knowledge?.base?.length || 0) +
-  (chatbot?.knowledge?.products?.length || 0) +
-  (chatbot?.knowledge?.services?.length || 0);
+export const trainedKnowledgeCount = (chatbot) =>
+  (chatbot?.trainedKnowledge?.knowledgeSourceCount || 0) +
+  (chatbot?.trainedKnowledge?.productCount || 0) +
+  (chatbot?.trainedKnowledge?.serviceCount || 0);

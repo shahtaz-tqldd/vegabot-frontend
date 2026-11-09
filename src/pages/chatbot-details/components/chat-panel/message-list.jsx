@@ -1,14 +1,79 @@
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FileText } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import ChatbotTile from "../chatbot-tile";
 
-const formatTime = (date) =>
-  new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(
-    date,
+const prettyFileSize = (bytes = 0) => {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const formatTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const isImage = (attachment) =>
+  attachment.attachmentType === "image" ||
+  String(attachment.mimeType || "").startsWith("image/");
+
+const MessageAttachments = ({ attachments }) => {
+  if (!attachments?.length) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {attachments.map((attachment) =>
+        isImage(attachment) && attachment.fileUrl ? (
+          <a
+            key={attachment.id}
+            href={attachment.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block overflow-hidden rounded-xl border border-border"
+          >
+            <img
+              src={attachment.fileUrl}
+              alt={attachment.fileName || "Attachment"}
+              className="h-28 w-40 object-cover transition hover:opacity-90"
+            />
+          </a>
+        ) : (
+          <a
+            key={attachment.id}
+            href={attachment.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flx max-w-56 gap-2 rounded-xl border border-border bg-background px-3 py-2 transition hover:border-primary/40"
+          >
+            <span className="center size-8 shrink-0 rounded-lg bg-primary/10 text-primary">
+              <FileText size={14} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-semibold text-foreground">
+                {attachment.fileName || "Attachment"}
+              </span>
+              {Boolean(attachment.fileSize) && (
+                <span className="block text-[10px] text-muted-foreground">
+                  {prettyFileSize(attachment.fileSize)}
+                </span>
+              )}
+            </span>
+          </a>
+        ),
+      )}
+    </div>
   );
+};
 
 const TypingIndicator = ({ chatbot }) => (
   <div className="flx gap-2.5">
@@ -41,16 +106,9 @@ const MessageList = ({ chatbot, messages, typing }) => {
           return (
             <div
               key={message.id}
-              className={cn(
-                "flx gap-2.5",
-                isUser && "flex-row-reverse",
-              )}
+              className={cn("flx gap-2.5", isUser && "flex-row-reverse")}
             >
-              {isUser ? (
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-[10px] font-bold text-white">
-                  You
-                </span>
-              ) : (
+              {isUser ? null : (
                 <ChatbotTile
                   chatbot={chatbot}
                   className="size-8 rounded-lg text-[10px]"
@@ -69,15 +127,21 @@ const MessageList = ({ chatbot, messages, typing }) => {
                     isUser
                       ? "rounded-tr-sm bg-primary text-white"
                       : "rounded-tl-sm bg-muted text-foreground",
+                    // Live voice captions: interim speech renders transient.
+                    message.partial && "opacity-75",
+                    message.partial && !isUser && "italic",
                   )}
                 >
-                  {isUser ? (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  ) : (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {message.content}
-                    </ReactMarkdown>
-                  )}
+                  {message.content ? (
+                    isUser ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                      </ReactMarkdown>
+                    )
+                  ) : null}
+                  <MessageAttachments attachments={message.attachments} />
                 </div>
                 <span
                   className={cn(
