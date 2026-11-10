@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ExternalLink, FileText, Mic } from "lucide-react";
+import { ExternalLink, FileText, Mic, Package, Sparkles, Wrench } from "lucide-react";
 
 import { ScrollContainer } from "@/components/ui/scrollbar";
+import Image from "@/components/ui/image";
 import { cn } from "@/lib/utils";
 import ChatbotTile from "../chatbot-tile";
 import VoiceWave from "./voice-wave";
@@ -84,9 +85,15 @@ const formatPrice = (price, currency) =>
     ? null
     : [price, currency].filter(Boolean).join(" ");
 
+const RECOMMENDATION_ICONS = {
+  product: Package,
+  service: Wrench,
+};
+
 const RecommendationCard = ({ item }) => {
   const price = formatPrice(item.price, item.currency);
   const tag = item.type === "service" ? item.serviceType : item.category;
+  const FallbackIcon = RECOMMENDATION_ICONS[item.type] ?? Sparkles;
   const Wrapper = item.url ? "a" : "div";
 
   return (
@@ -95,31 +102,46 @@ const RecommendationCard = ({ item }) => {
         ? { href: item.url, target: "_blank", rel: "noreferrer" }
         : {})}
       className={cn(
-        "flex w-56 shrink-0 flex-col rounded-xl border border-border bg-card p-3 text-left transition",
-        item.url && "hover:border-primary/40",
+        "flex w-56 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition",
+        item.url && "hover:border-primary/40 hover:shadow-sm",
       )}
     >
-      <div className="flbx gap-2">
-        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-          {tag || item.type}
-        </span>
-        {item.url && (
-          <ExternalLink size={12} className="shrink-0 text-muted-foreground" />
+      <Image
+        src={item.imageUrl}
+        alt={item.name}
+        className="h-28 w-full object-cover"
+        fallback={
+          <div className="center h-28 w-full bg-muted/60">
+            <span className="center size-9 rounded-xl bg-primary/10 text-primary">
+              <FallbackIcon size={16} />
+            </span>
+          </div>
+        }
+      />
+
+      <div className="flex flex-1 flex-col p-3">
+        <div className="flbx gap-2">
+          <span className="min-w-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            {tag || item.type}
+          </span>
+          {item.url && (
+            <ExternalLink size={12} className="shrink-0 text-muted-foreground" />
+          )}
+        </div>
+        <p className="mt-2 line-clamp-1 text-sm font-semibold text-foreground">
+          {item.name}
+        </p>
+        {item.description && (
+          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+            {item.description}
+          </p>
+        )}
+        {price && (
+          <p className="mt-auto pt-2 text-sm font-bold text-foreground">
+            {price}
+          </p>
         )}
       </div>
-      <p className="mt-2 line-clamp-1 text-sm font-semibold text-foreground">
-        {item.name}
-      </p>
-      {item.description && (
-        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-          {item.description}
-        </p>
-      )}
-      {price && (
-        <p className="mt-auto pt-2 text-sm font-bold text-foreground">
-          {price}
-        </p>
-      )}
     </Wrapper>
   );
 };

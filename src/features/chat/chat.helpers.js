@@ -23,6 +23,7 @@ export const normalizeRecommendation = (raw = {}) => ({
   price: raw.price ?? null,
   currency: raw.currency ?? "",
   url: raw.url ?? "",
+  imageUrl: raw.image_url ?? raw.imageUrl ?? null,
   sku: raw.sku ?? "",
   category: raw.category ?? "",
   serviceType: raw.service_type ?? raw.serviceType ?? "",
