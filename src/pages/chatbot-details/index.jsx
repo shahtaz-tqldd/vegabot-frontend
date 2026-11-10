@@ -6,12 +6,10 @@ import Header from "@/components/layouts/header";
 import { ScrollContainer } from "@/components/ui/section";
 import TabMenu from "@/components/ui/tab";
 import { useChatbotDetailsQuery } from "@/features/chatbot/chatbotApiSlice";
-import { useNotifications } from "@/features/notifications/useNotifications";
 import useTitle from "@/hooks/useTitle";
 import useUrlTab from "@/hooks/useUrlTab";
 import { cn } from "@/lib/utils";
 import ChatPanel from "./components/chat-panel";
-import ChatbotInfoHeader from "./components/chatbot-info-header";
 import ConfigForm from "./components/config-form";
 import KnowledgePanel from "./components/knowledge-panel";
 import SessionList from "./components/session-list";
@@ -19,8 +17,8 @@ import useChatSessions from "./hooks/use-chat-sessions";
 
 const DETAIL_TABS = [
   { value: "chat", label: "Chat Session", icon: MessageSquare },
-  { value: "config", label: "Configuration", icon: Settings2 },
   { value: "training", label: "Training", icon: Sparkles },
+  { value: "config", label: "Configuration", icon: Settings2 },
 ];
 
 const ChatbotDetailsPage = () => {
@@ -33,9 +31,8 @@ const ChatbotDetailsPage = () => {
     defaultTab: "chat",
   });
 
-  // Training finishes asynchronously — keep knowledge queries fresh from
-  // training_complete notifications.
-  useNotifications();
+  // Training finishes asynchronously — the notifications socket in the
+  // Header keeps knowledge queries fresh from training_complete events.
 
   const chat = useChatSessions(chatbot);
 
@@ -91,14 +88,14 @@ const ChatbotDetailsPage = () => {
             mobileChatOpen ? "hidden" : "flex",
           )}
         >
-          <ChatbotInfoHeader chatbot={chatbot} />
+          {/* <ChatbotInfoHeader chatbot={chatbot} /> */}
 
           <TabMenu
             tabs={DETAIL_TABS}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             compact
-            className="px-4"
+            className="pt-2.5 px-4"
           />
 
           {activeTab === "chat" && (

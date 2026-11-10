@@ -7,14 +7,22 @@ import { getTokens } from "@/hooks/useToken";
 
 const NOTIFICATIONS_PATH = "/ws/notifications/";
 const MAX_RETRY_DELAY_MS = 15000;
+const KEEPALIVE_INTERVAL_MS = 25000;
+const UNAUTHENTICATED = 4401;
 
-const isTrainingComplete = (message) =>
-  message?.event === "training_complete" ||
-  message?.notification_type === "training_complete";
+// Frames are `{ type: "notification.created", data: <notification> }`; older
+// backends sent the notification fields flat on the frame itself.
+const extractNotification = (frame) => {
+  if (frame?.type === "notification.created") return frame.data ?? null;
+  if (frame?.event || frame?.notification_type) return frame;
+  return null;
+};
 
 /**
- * Listens on the notifications socket and keeps knowledge queries fresh.
- * Training finishes asynchronously, so training_complete events are what
+ * Keeps one notifications socket open for the whole app: realtime
+ * notification.created frames refresh the notifications cache (unread badge,
+ * open panels), and training_complete events additionally keep knowledge
+ * queries fresh — training finishes asynchronously, so those events are what
  * flip sources from "Training" to "Trained" without manual refreshes.
  */
 export const useNotifications = () => {
@@ -28,8 +36,28 @@ export const useNotifications = () => {
 
     let socket;
     let retryTimer;
+    let keepaliveTimer;
     let attempts = 0;
     let disposed = false;
+
+    const handleNotification = (notification) => {
+      dispatch(apiSlice.util.invalidateTags(["notifications"]));
+
+      const type =
+        notification?.notification_type ?? notification?.event ?? "general";
+
+      if (type !== "training_complete") return;
+
+      dispatch(apiSlice.util.invalidateTags(["knowledge"]));
+
+      const title =
+        notification?.metadata?.title || notification?.title || "Knowledge";
+      const skipped = notification?.metadata?.training_stage === "skipped";
+
+      toast.success(
+        skipped ? `${title} is already trained` : `${title} finished training`,
+      );
+    };
 
     const connect = () => {
       if (disposed) return;
@@ -39,28 +67,33 @@ export const useNotifications = () => {
         `${baseUrl}${NOTIFICATIONS_PATH}?token=${accessToken}`,
       );
 
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-
-          if (!isTrainingComplete(message)) return;
-
-          dispatch(apiSlice.util.invalidateTags(["knowledge"]));
-
-          const title =
-            message?.metadata?.title || message?.data?.title || "Knowledge";
-          const skipped = message?.metadata?.training_stage === "skipped";
-
-          toast.success(
-            skipped ? `${title} is already trained` : `${title} finished training`,
-          );
-        } catch {
-          // Ignore malformed frames.
-        }
+      socket.onopen = () => {
+        attempts = 0;
+        keepaliveTimer = window.setInterval(() => {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "ping" }));
+          }
+        }, KEEPALIVE_INTERVAL_MS);
       };
 
-      socket.onclose = () => {
+      socket.onmessage = (event) => {
+        let frame;
+
+        try {
+          frame = JSON.parse(event.data);
+        } catch {
+          return; // Ignore malformed frames.
+        }
+
+        const notification = extractNotification(frame);
+        if (notification) handleNotification(notification);
+      };
+
+      socket.onclose = (closeEvent) => {
+        window.clearInterval(keepaliveTimer);
         if (disposed) return;
+        if (closeEvent.code === UNAUTHENTICATED) return;
+
         attempts += 1;
         retryTimer = window.setTimeout(
           connect,
@@ -74,6 +107,7 @@ export const useNotifications = () => {
     return () => {
       disposed = true;
       window.clearTimeout(retryTimer);
+      window.clearInterval(keepaliveTimer);
       socket?.close();
     };
   }, [dispatch]);

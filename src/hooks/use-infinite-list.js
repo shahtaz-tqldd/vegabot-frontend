@@ -79,6 +79,7 @@ const useInfiniteList = ({ useQuery, args, itemsKey, pageSize = 20 }) => {
 
   return {
     items,
+    meta,
     count,
     hasMore,
     isLoading,

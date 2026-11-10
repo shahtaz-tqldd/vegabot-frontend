@@ -96,6 +96,7 @@ const ChatPanel = ({
           >
             <ArrowLeft size={16} />
           </Button>
+          <ChatbotProfile size="6"/>
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-foreground">
               {chatbot.name}

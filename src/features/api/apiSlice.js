@@ -97,6 +97,7 @@ export const apiSlice = createApi({
     "knowledge",
     "chat-sessions",
     "chat-messages",
+    "notifications",
   ],
   keepUnusedDataFor: 300, // Don't keep any unused data
   refetchOnMountOrArgChange: false, // Always refetch when component mounts
