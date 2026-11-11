@@ -1,4 +1,5 @@
 import useUrlTab from "@/hooks/useUrlTab";
+import { ScrollContainer } from "@/components/ui/section";
 import { cn } from "@/lib/utils";
 import BaseKnowledge from "./base-knowledge";
 import ProductsKnowledge from "./products-knowledge";
@@ -18,8 +19,8 @@ const KnowledgePanel = ({ chatbot }) => {
   });
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-4 mt-4 grid shrink-0 grid-cols-3 gap-1 rounded-xl bg-muted p-1">
         {SUB_TABS.map((tab) => (
           <button
             key={tab.value}
@@ -37,9 +38,17 @@ const KnowledgePanel = ({ chatbot }) => {
         ))}
       </div>
 
-      {activeSubTab === "base" && <BaseKnowledge chatbot={chatbot} />}
+      {activeSubTab === "base" && (
+        <ScrollContainer className="px-4 py-5">
+          <BaseKnowledge chatbot={chatbot} />
+        </ScrollContainer>
+      )}
       {activeSubTab === "products" && <ProductsKnowledge chatbot={chatbot} />}
-      {activeSubTab === "services" && <ServicesKnowledge chatbot={chatbot} />}
+      {activeSubTab === "services" && (
+        <ScrollContainer className="px-4 py-5">
+          <ServicesKnowledge chatbot={chatbot} />
+        </ScrollContainer>
+      )}
     </div>
   );
 };

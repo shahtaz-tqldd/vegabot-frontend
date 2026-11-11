@@ -117,11 +117,7 @@ const ChatbotDetailsPage = () => {
             </ScrollContainer>
           )}
 
-          {activeTab === "training" && (
-            <ScrollContainer className="px-4 py-5">
-              <KnowledgePanel chatbot={chatbot} />
-            </ScrollContainer>
-          )}
+          {activeTab === "training" && <KnowledgePanel chatbot={chatbot} />}
         </aside>
 
         <main
