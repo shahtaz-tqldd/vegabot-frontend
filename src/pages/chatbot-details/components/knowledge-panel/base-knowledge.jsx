@@ -134,7 +134,7 @@ const BaseKnowledge = ({ chatbot }) => {
 
                 <div className="min-w-0 flex-1 px-3">
                   <p className="truncate text-sm font-semibold text-foreground">
-                    {source.title}
+                    {source.name}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {sourceMeta(source)}

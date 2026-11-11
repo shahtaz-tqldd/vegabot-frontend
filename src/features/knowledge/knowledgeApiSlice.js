@@ -149,6 +149,24 @@ export const knowledgeApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["knowledge"],
     }),
 
+    deleteProducts: builder.mutation({
+      query: ({ chatbot, products } = {}) => ({
+        url: `${KNOWLEDGE_URL}/products/delete/`,
+        method: "POST",
+        body: { chatbot, products },
+      }),
+      invalidatesTags: ["knowledge"],
+    }),
+
+    retrainProducts: builder.mutation({
+      query: ({ chatbot, products } = {}) => ({
+        url: `${KNOWLEDGE_URL}/products/retrain/`,
+        method: "POST",
+        body: { chatbot, products },
+      }),
+      invalidatesTags: ["knowledge"],
+    }),
+
     /* ----- Services ----- */
     downloadServiceTemplate: builder.query({
       query: () => ({
@@ -255,11 +273,17 @@ export const {
   useUploadKnowledgeTextMutation,
   useRetrainKnowledgeMutation,
   useDeleteKnowledgeMutation,
+  
+  // products
   useLazyDownloadProductTemplateQuery,
   useListProductsQuery,
   useImportProductsMutation,
   useUpdateProductMutation,
   useDisableProductsMutation,
+  useDeleteProductsMutation,
+  useRetrainProductsMutation,
+
+  // services
   useLazyDownloadServiceTemplateQuery,
   useListServicesQuery,
   useImportServicesMutation,

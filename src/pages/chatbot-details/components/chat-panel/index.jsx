@@ -144,7 +144,6 @@ const ChatPanel = ({
             chatbot={chatbot}
             messages={session.messages}
             typing={typing}
-            getMicLevel={voice?.getMicLevel}
           />
           <Composer
             onSend={onSend}

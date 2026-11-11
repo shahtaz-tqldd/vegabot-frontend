@@ -1,13 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ExternalLink, FileText, Mic, Package, Sparkles, Wrench } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Mic,
+  Package,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 
 import { ScrollContainer } from "@/components/ui/scrollbar";
 import Image from "@/components/ui/image";
 import { cn } from "@/lib/utils";
 import ChatbotTile from "../chatbot-tile";
-import VoiceWave from "./voice-wave";
 import ChatbotProfile from "@/components/shared/chatbot";
 
 const prettyFileSize = (bytes = 0) => {
@@ -147,19 +155,118 @@ const RecommendationCard = ({ item }) => {
 };
 
 const Recommendations = ({ items, animate = false }) => {
+  const trackRef = useRef(null);
+  const [edges, setEdges] = useState({
+    atStart: true,
+    atEnd: false,
+    overflow: false,
+  });
+
+  const updateEdges = useCallback(() => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    const maxScroll = track.scrollWidth - track.clientWidth;
+
+    setEdges({
+      atStart: track.scrollLeft <= 4,
+      atEnd: track.scrollLeft >= maxScroll - 4,
+      overflow: maxScroll > 4,
+    });
+  }, []);
+
+  // Re-measure when cards stream in and when the panel resizes.
+  useEffect(() => {
+    updateEdges();
+
+    const track = trackRef.current;
+    if (!track || typeof ResizeObserver === "undefined") return undefined;
+
+    const observer = new ResizeObserver(updateEdges);
+    observer.observe(track);
+
+    return () => observer.disconnect();
+  }, [items, updateEdges]);
+
+  const scrollByCard = (direction) => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    const card = track.querySelector("[data-recommendation-card]");
+    const step = card ? card.offsetWidth + 8 : track.clientWidth * 0.8;
+
+    track.scrollBy({ left: direction * step, behavior: "smooth" });
+  };
+
   if (!items?.length) return null;
 
   return (
     <div
       className={cn(
-        "custom-scrollbar mt-2 flex max-w-full gap-2 overflow-x-auto pb-1",
+        "relative mt-2 max-w-full",
         animate &&
           "animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none",
       )}
     >
-      {items.map((item) => (
-        <RecommendationCard key={`${item.type}-${item.id}`} item={item} />
-      ))}
+      <div
+        ref={trackRef}
+        onScroll={updateEdges}
+        className="flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {items.map((item) => (
+          <div
+            key={`${item.type}-${item.id}`}
+            data-recommendation-card
+            className="shrink-0 snap-start"
+          >
+            <RecommendationCard item={item} />
+          </div>
+        ))}
+      </div>
+
+      {edges.overflow && (
+        <>
+          {!edges.atStart && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background to-transparent"
+            />
+          )}
+          {!edges.atEnd && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent"
+            />
+          )}
+
+          <button
+            type="button"
+            aria-label="Show previous recommendations"
+            onClick={() => scrollByCard(-1)}
+            className={cn(
+              "center absolute left-0 top-1/2 z-10 size-7 -translate-y-1/2 rounded-full border border-border bg-card text-foreground shadow-md transition",
+              edges.atStart
+                ? "pointer-events-none opacity-0"
+                : "opacity-100 hover:border-primary/40 hover:text-primary",
+            )}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Show more recommendations"
+            onClick={() => scrollByCard(1)}
+            className={cn(
+              "center absolute right-0 top-1/2 z-10 size-7 -translate-y-1/2 rounded-full border border-border bg-card text-foreground shadow-md transition",
+              edges.atEnd
+                ? "pointer-events-none opacity-0"
+                : "opacity-100 hover:border-primary/40 hover:text-primary",
+            )}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </>
+      )}
     </div>
   );
 };
@@ -185,20 +292,16 @@ const TypingIndicator = ({ chatbot }) => (
   </div>
 );
 
-// The user's in-progress utterance: live mic wave, plus the transcript as it
-// arrives.
-const ListeningContent = ({ content, getMicLevel }) => (
-  <span className="flex items-center gap-2.5">
-    <VoiceWave getLevel={getMicLevel} barClassName="bg-white" />
-    {content ? (
-      <span className="whitespace-pre-wrap">{content}</span>
-    ) : (
-      <span className="text-white/80">Listening…</span>
-    )}
-  </span>
-);
+// The user's in-progress utterance: just the transcript as it arrives —
+// the live mic wave lives in the composer, not in the bubble.
+const ListeningContent = ({ content }) =>
+  content ? (
+    <span className="whitespace-pre-wrap">{content}</span>
+  ) : (
+    <span className="text-white/80">Listening…</span>
+  );
 
-const MessageList = ({ chatbot, messages, typing, getMicLevel }) => {
+const MessageList = ({ chatbot, messages, typing }) => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -238,10 +341,7 @@ const MessageList = ({ chatbot, messages, typing, getMicLevel }) => {
                   )}
                 >
                   {message.listening ? (
-                    <ListeningContent
-                      content={message.content}
-                      getMicLevel={getMicLevel}
-                    />
+                    <ListeningContent content={message.content} />
                   ) : message.streaming && !message.content ? (
                     <TypingDots />
                   ) : message.content ? (

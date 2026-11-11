@@ -86,9 +86,9 @@ export const normalizeKnowledgeSource = (raw = {}) => {
 
 // Secondary line shown under a source's title.
 export const sourceMeta = (source = {}) => {
-  if (source.type === "website") return source.url ?? "";
-  if (source.type === "file") {
-    return prettyFileSize(source.fileSize) || "File";
+  if (source.source_type === "website") return source.url ?? "";
+  if (source.source_type === "file") {
+    return prettyFileSize(source.file_size) || "File";
   }
   return `${source.chunks || 0} chunk${source.chunks === 1 ? "" : "s"} of text`;
 };
