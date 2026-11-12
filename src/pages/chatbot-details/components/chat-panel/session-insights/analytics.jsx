@@ -203,7 +203,6 @@ const AnalyticsTab = ({ messages, summary }) => {
         title="Token breakdown"
         hint={`${stats.replies.length} repl${stats.replies.length === 1 ? "y" : "ies"}`}
       >
-        <StackedBar parts={TOKEN_PARTS} totals={totals} />
         {TOKEN_PARTS.map((part) => (
           <KeyValue
             key={part.key}
@@ -221,7 +220,6 @@ const AnalyticsTab = ({ messages, summary }) => {
 
       {hasAudio ? (
         <Panel title="Audio breakdown" hint={formatMinutes(audioSeconds)}>
-          <StackedBar parts={AUDIO_PARTS} totals={totals} />
           {AUDIO_PARTS.map((part) => (
             <KeyValue
               key={part.key}

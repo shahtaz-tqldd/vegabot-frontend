@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Bell,
   ExternalLink,
@@ -176,21 +175,13 @@ const CartItemRow = ({ item }) => (
   </div>
 );
 
-const CART_FILTERS = [
-  { value: "", label: "All" },
-  { value: "in_cart", label: "In cart" },
-  { value: "ordered", label: "Ordered" },
-  { value: "removed", label: "Removed" },
-];
-
 // `rev` changes when the session's counts change, so an open panel picks up
 // items the agent adds mid-conversation.
 export const CartSection = ({ sessionId, rev, count }) => {
-  const [status, setStatus] = useState("");
   const { items, isLoading, isError, refetch, hasMore, sentinelRef } =
     useInfiniteList({
       useQuery: useSessionCartItemsQuery,
-      args: { session: sessionId, status, rev },
+      args: { session: sessionId, rev },
       itemsKey: "items",
     });
 
@@ -201,40 +192,11 @@ export const CartSection = ({ sessionId, rev, count }) => {
   );
 
   return (
-    <InsightSection
-      icon={ShoppingCart}
-      title="Cart"
-      count={count}
-      action={
-        <div className="flex gap-0.5 rounded-full bg-muted p-0.5">
-          {CART_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              type="button"
-              onClick={() => setStatus(filter.value)}
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[11px] font-semibold transition",
-                status === filter.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      }
-    >
+    <InsightSection icon={ShoppingCart} title="Cart" count={count}>
       <ListState
         {...{ items, isLoading, isError, refetch, hasMore, sentinelRef }}
         empty={
-          <EmptyState
-            text={
-              status
-                ? "No items with this status."
-                : "Products the agent adds to this session's cart show up here."
-            }
-          />
+          <EmptyState text="Products the agent adds to this session's cart show up here." />
         }
       >
         {items.map((item) => (

@@ -56,7 +56,13 @@ const VoiceRowSkeleton = () => (
 // Controlled picker: prebuilt voice (by name) + speaking pace.
 // `currentVoice` is what the bot speaks with now, used to explain a custom or
 // platform-default voice that isn't an explicit prebuilt choice.
-const VoicePicker = ({ voiceName, onVoiceChange, pace, onPaceChange, currentVoice }) => {
+const VoicePicker = ({
+  voiceName,
+  onVoiceChange,
+  pace,
+  onPaceChange,
+  currentVoice,
+}) => {
   const { data: options, isLoading, isError, refetch } = useVoiceOptionsQuery();
   const preview = useVoicePreview();
   const [genderFilter, setGenderFilter] = useState("all");
@@ -90,31 +96,11 @@ const VoicePicker = ({ voiceName, onVoiceChange, pace, onPaceChange, currentVoic
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-          Approximate — applied through the voice instructions.
-        </p>
       </div>
 
       <div>
         <div className="mb-2 flbx">
           <p className="text-xs font-semibold text-muted-foreground">Voice</p>
-          <div className="flex gap-0.5 rounded-full bg-muted p-0.5">
-            {GENDER_FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                onClick={() => setGenderFilter(filter.value)}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[11px] font-semibold transition",
-                  genderFilter === filter.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         {currentVoice?.type === "custom" && !voiceName && (

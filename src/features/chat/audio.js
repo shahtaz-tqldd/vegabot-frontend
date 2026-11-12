@@ -58,6 +58,12 @@ class Pcm16Downsampler extends AudioWorkletProcessor {
 registerProcessor("vegabot-pcm16-downsampler", Pcm16Downsampler);
 `;
 
+// Voice mode needs mic capture plus AudioWorklet (for PCM conversion).
+export const voiceSupported = () =>
+  typeof window !== "undefined" &&
+  Boolean(navigator.mediaDevices?.getUserMedia) &&
+  "AudioWorkletNode" in window;
+
 export class MicCapture {
   constructor() {
     this.onChunk = null;

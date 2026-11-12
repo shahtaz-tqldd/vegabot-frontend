@@ -1,8 +1,12 @@
 import { useState } from "react";
 import {
+  AlertTriangle,
   BookOpen,
+  Copy,
   FileText,
   Globe,
+  Loader2,
+  RefreshCw,
   RotateCcw,
   TextQuote,
   Trash2,
@@ -20,8 +24,8 @@ import {
 } from "@/features/knowledge/knowledgeApiSlice";
 import { sourceMeta } from "@/features/knowledge/knowledge.helpers";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
+import { formatDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
-import TrainingActivity from "./training-activity";
 import UploadKnowledgeDialog from "./upload-knowledge-dialog";
 
 const SOURCE_ICONS = {
@@ -33,6 +37,7 @@ const SOURCE_ICONS = {
 const BaseKnowledge = ({ chatbot }) => {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [expandedErrors, setExpandedErrors] = useState(() => new Set());
 
   const {
     data: listData,
@@ -47,7 +52,24 @@ const BaseKnowledge = ({ chatbot }) => {
 
   const sources = listData?.sources ?? [];
 
-  // Retrain is available for URL sources only — files and text are immutable.
+  const toggleError = (id) =>
+    setExpandedErrors((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const copyError = async (source) => {
+    try {
+      await navigator.clipboard.writeText(source.errorMessage || "");
+      toast.success("Error copied to clipboard");
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  };
+
+  // Retrain/retry share the same endpoint — files and text are immutable.
   const handleRetry = async (source) => {
     try {
       await retrainSource({
@@ -55,7 +77,11 @@ const BaseKnowledge = ({ chatbot }) => {
         document: source.id,
       }).unwrap();
 
-      toast.success(`Retraining “${source.title}”`);
+      toast.success(
+        source.status === "failed"
+          ? `Retrying “${source.title}”`
+          : `Retraining “${source.title}”`,
+      );
     } catch (error) {
       toast.error(
         getApiErrorMessage(error, `Failed to retrain “${source.title}”`),
@@ -113,7 +139,7 @@ const BaseKnowledge = ({ chatbot }) => {
       </Button>
 
       {sources.length > 0 ? (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {sources.map((source) => {
             const { Icon, className: iconClassName } =
               SOURCE_ICONS[source.type] ?? SOURCE_ICONS.text;
@@ -121,68 +147,148 @@ const BaseKnowledge = ({ chatbot }) => {
             return (
               <div
                 key={source.id}
-                className="flx group rounded-2xl border border-border bg-background px-3.5 py-3 transition hover:border-primary/40"
+                className="group space-y-2.5 rounded-2xl border border-border bg-card p-3.5 transition hover:border-primary/40"
               >
-                <span
-                  className={cn(
-                    "center size-9 shrink-0 rounded-xl",
-                    iconClassName,
-                  )}
-                >
-                  <Icon size={16} />
-                </span>
+                <div className="flx gap-2">
+                  <span
+                    className={cn(
+                      "center size-10 shrink-0 rounded-xl",
+                      iconClassName,
+                    )}
+                  >
+                    <Icon size={17} />
+                  </span>
 
-                <div className="min-w-0 flex-1 px-3">
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {source.name}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {sourceMeta(source)}
-                  </p>
-                </div>
-
-                {source.status === "trained" && (
-                  <EmBadge variant="success-accent" size="xs">
-                    Trained
-                  </EmBadge>
-                )}
-                {source.status === "processing" && (
-                  <EmBadge variant="primary-accent" size="xs">
-                    <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-                    Training
-                  </EmBadge>
-                )}
-                {source.status === "failed" && (
-                  <>
-                    <EmBadge
-                      variant="transparent"
-                      size="xs"
-                      className="bg-red-500/10 text-red-500"
-                    >
-                      Failed
-                    </EmBadge>
-                    {source.retrainable && (
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      {source.type === "website" && source.url ? (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                        >
+                          {source.title}
+                        </a>
+                      ) : (
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {source.title}
+                        </p>
+                      )}
+                      {source.status === "trained" && (
+                        <EmBadge variant="success-accent" size="xs">
+                          Trained
+                        </EmBadge>
+                      )}
+                      {source.status === "processing" && (
+                        <EmBadge variant="primary-accent" size="xs">
+                          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                          Training
+                        </EmBadge>
+                      )}
+                      {source.status === "failed" && (
+                        <EmBadge
+                          variant="transparent"
+                          size="xs"
+                          className="bg-red-500/10 text-red-500"
+                        >
+                          Failed
+                        </EmBadge>
+                      )}
                       <button
                         type="button"
-                        aria-label={`Retry training ${source.title}`}
+                        aria-label={`Remove ${source.title}`}
+                        onClick={() => setDeleteTarget(source)}
+                        className="center ml-1 size-7 shrink-0 rounded-full text-muted-foreground transition hover:bg-red-500/10 hover:text-red-500"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {sourceMeta(source)}
+                      {source.processedAt &&
+                        source.status === "trained" &&
+                        ` · Trained ${formatDate(source.processedAt)}`}
+                    </p>
+                  </div>
+                </div>
+
+                {source.status === "failed" &&
+                  source.errorMessage && (
+                    <div className="space-y-1.5 rounded-xl bg-red-500/5 px-3 py-2.5">
+                      <div className="flbx gap-1">
+                        <p className="flx min-w-0 gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                          Training failed
+                        </p>
+                        <button
+                          type="button"
+                          aria-label="Copy error details"
+                          onClick={() => copyError(source)}
+                          className="center size-6 shrink-0 rounded-full text-red-500/70 transition hover:bg-red-500/10 hover:text-red-500"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      </div>
+                      <p
+                        className={cn(
+                          "text-xs leading-5 text-red-600 dark:text-red-400",
+                          expandedErrors.has(source.id)
+                            ? ""
+                            : "line-clamp-2",
+                        )}
+                      >
+                        {source.errorMessage}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => toggleError(source.id)}
+                        className="text-[11px] font-bold text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+                      >
+                        {expandedErrors.has(source.id)
+                          ? "Show less"
+                          : "See details"}
+                      </button>
+                    </div>
+                  )}
+
+                {(source.retrainable || source.status === "failed") && (
+                  <div className="flbx border-t border-border pt-2.5">
+                    {source.status === "failed" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1.5 rounded-full px-2.5 text-xs"
                         disabled={isRetraining}
                         onClick={() => handleRetry(source)}
-                        className="ml-1.5 center size-8 rounded-full text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
                       >
-                        <RotateCcw size={14} />
-                      </button>
+                        <RotateCcw size={13} />
+                        Retry training
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                        disabled={isRetraining}
+                        onClick={() => handleRetry(source)}
+                      >
+                        {isRetraining ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <RefreshCw size={13} />
+                        )}
+                        Retrain
+                      </Button>
                     )}
-                  </>
+                    <span className="text-[10px] text-muted-foreground">
+                      {source.retrainable
+                        ? "URL content is re-crawled on retrain"
+                        : "Pick up where it left off"}
+                    </span>
+                  </div>
                 )}
 
-                <button
-                  type="button"
-                  aria-label={`Remove ${source.title}`}
-                  onClick={() => setDeleteTarget(source)}
-                  className="ml-1.5 center size-8 rounded-full text-muted-foreground opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
-                >
-                  <Trash2 size={15} />
-                </button>
               </div>
             );
           })}
@@ -200,8 +306,6 @@ const BaseKnowledge = ({ chatbot }) => {
           </p>
         </div>
       )}
-
-      <TrainingActivity chatbot={chatbot.slug} />
 
       <UploadKnowledgeDialog
         open={uploadOpen}
