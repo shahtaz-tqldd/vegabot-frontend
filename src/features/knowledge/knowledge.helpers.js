@@ -52,8 +52,9 @@ const fallbackTitle = (raw = {}, type) => {
       return raw.url;
     }
   }
-  if (type === "file") return raw.title || raw.file_name || "File";
-  return raw.title || "Text source";
+  if (type === "file")
+    return raw.name || raw.title || raw.file_name || raw.original_filename || "File";
+  return raw.name || raw.title || "Text source";
 };
 
 export const prettyFileSize = (bytes) => {
@@ -79,6 +80,9 @@ export const normalizeKnowledgeSource = (raw = {}) => {
     fileSize: raw.file_size ?? raw.size ?? null,
     chunks: raw.chunks ?? raw.chunk_count ?? raw.total_chunks ?? 0,
     status: normalizeTrainingStatus(raw.status),
+    errorMessage: raw.error_message ?? "",
+    isEnabled: raw.is_enabled ?? true,
+    processedAt: raw.processed_at ?? raw.updatedAt ?? null,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   };
@@ -132,7 +136,7 @@ export const normalizeTrainingLog = (raw = {}) => {
   return {
     ...raw,
     id: raw.id ?? raw.log_id ?? raw.uuid,
-    status: normalizeTrainingStatus(raw.status ?? raw.state),
+    status: normalizeTrainingStatus(raw.status ?? raw.state ?? raw.stage),
     sourceTitle:
       raw.source_title ??
       raw.title ??
@@ -140,7 +144,16 @@ export const normalizeTrainingLog = (raw = {}) => {
       source?.name ??
       raw.knowledge_base ??
       "Knowledge source",
+    space: raw.space ?? "",
     stage: raw.training_stage ?? raw.stage ?? raw.metadata?.training_stage,
+    progress: Number(raw.progress ?? 0),
+    totalChunks: Number(raw.total_chunks ?? raw.totalChunks ?? 0),
+    processedChunks: Number(raw.processed_chunks ?? raw.processedChunks ?? 0),
+    forceRetrain: Boolean(raw.force_retrain ?? raw.forceRetrain),
+    contentChanged: Boolean(raw.content_changed ?? raw.contentChanged),
+    errorMessage: raw.error_message ?? raw.errorMessage ?? "",
+    startedAt: raw.started_at ?? raw.startedAt ?? null,
+    completedAt: raw.completed_at ?? raw.completedAt ?? null,
     message: raw.message,
     createdAt: raw.created_at ?? raw.timestamp,
   };
