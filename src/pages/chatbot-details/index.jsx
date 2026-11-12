@@ -130,13 +130,15 @@ const ChatbotDetailsPage = () => {
             key={chat.activeSessionId ?? "welcome"}
             chatbot={chatbot}
             session={chat.activeSession}
+            sessionSummary={chat.sessions.find(
+              (item) => item.id === chat.activeSessionId,
+            )}
             typing={chat.typing}
             replying={chat.replying}
             loading={chat.isSessionLoading}
             starting={chat.isStarting}
             voice={chat.voice}
             onSend={chat.sendMessage}
-            onNewSession={handleNewSession}
             onBack={handleBack}
           />
         </main>

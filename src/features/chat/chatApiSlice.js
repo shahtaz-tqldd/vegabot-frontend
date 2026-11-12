@@ -1,6 +1,9 @@
 import { apiSlice } from "../api/apiSlice";
 import {
+  normalizeCartItem,
+  normalizeEscalation,
   normalizeMessage,
+  normalizeOrder,
   normalizeSessionDetail,
   normalizeSessionSummary,
 } from "./chat.helpers";
@@ -104,6 +107,52 @@ export const chatApiSlice = apiSlice.injectEndpoints({
         { type: "chat-messages", id: session },
       ],
     }),
+
+    // Session side panels. All three 404 for sessions the user can't see.
+    sessionCartItems: builder.query({
+      query: ({ session, status, page = 1, page_size = 20 }) => ({
+        url: `${CHAT_URL}/sessions/cart-items/`,
+        method: "GET",
+        params: { session, page, page_size, ...(status ? { status } : {}) },
+      }),
+      transformResponse: (response = {}) => ({
+        items: (response.data ?? []).map(normalizeCartItem),
+        meta: response.meta ?? {},
+      }),
+      providesTags: (result, error, { session } = {}) => [
+        { type: "chat-sessions", id: `CART-${session}` },
+      ],
+    }),
+
+    sessionOrders: builder.query({
+      query: ({ session, page = 1, page_size = 20 }) => ({
+        url: `${CHAT_URL}/sessions/orders/`,
+        method: "GET",
+        params: { session, page, page_size },
+      }),
+      transformResponse: (response = {}) => ({
+        items: (response.data ?? []).map(normalizeOrder),
+        meta: response.meta ?? {},
+      }),
+      providesTags: (result, error, { session } = {}) => [
+        { type: "chat-sessions", id: `ORDERS-${session}` },
+      ],
+    }),
+
+    sessionEscalations: builder.query({
+      query: ({ session, page = 1, page_size = 20 }) => ({
+        url: `${CHAT_URL}/sessions/escalations/`,
+        method: "GET",
+        params: { session, page, page_size },
+      }),
+      transformResponse: (response = {}) => ({
+        items: (response.data ?? []).map(normalizeEscalation),
+        meta: response.meta ?? {},
+      }),
+      providesTags: (result, error, { session } = {}) => [
+        { type: "chat-sessions", id: `ESCALATIONS-${session}` },
+      ],
+    }),
   }),
 });
 
@@ -114,4 +163,7 @@ export const {
   useDeleteChatSessionMutation,
   useListChatMessagesQuery,
   useSendChatMessageMutation,
+  useSessionCartItemsQuery,
+  useSessionOrdersQuery,
+  useSessionEscalationsQuery,
 } = chatApiSlice;

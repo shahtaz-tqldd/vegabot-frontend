@@ -1,11 +1,12 @@
-import { ArrowLeft, Loader2, Plus, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import ChatbotTile from "../chatbot-tile";
 import Composer from "./composer";
 import MessageList from "./message-list";
 import ChatbotProfile from "@/components/shared/chatbot";
+import SessionInsights, { SessionInsightsButton } from "./session-insights";
 
 const SUGGESTED_PROMPTS = [
   "What can you help me with?",
@@ -58,15 +59,16 @@ const WelcomeScreen = ({ chatbot, onSend, voice, starting = false }) => (
 const ChatPanel = ({
   chatbot,
   session,
+  sessionSummary,
   typing,
   replying = false,
   loading = false,
   starting = false,
   voice,
   onSend,
-  onNewSession,
   onBack,
 }) => {
+  const [showInsights, setShowInsights] = useState(false);
   const voiceOn = voice && voice.status !== "off";
 
   // No session selected — greet the user and start a conversation from here.
@@ -121,17 +123,21 @@ const ChatPanel = ({
           </div>
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="New session"
-          onClick={onNewSession}
-        >
-          <Plus size={16} />
-        </Button>
+        <SessionInsightsButton
+          summary={sessionSummary}
+          active={showInsights}
+          onClick={() => setShowInsights((open) => !open)}
+        />
       </header>
 
-      {loading ? (
+      {showInsights ? (
+        <SessionInsights
+          chatbot={chatbot}
+          session={session}
+          summary={sessionSummary}
+          onBack={() => setShowInsights(false)}
+        />
+      ) : loading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
