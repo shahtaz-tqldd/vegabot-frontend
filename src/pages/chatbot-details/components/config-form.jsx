@@ -1,6 +1,15 @@
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Camera, Pencil, Settings2, ShieldAlert } from "lucide-react";
+import {
+  AudioLines,
+  Camera,
+  Gauge,
+  Mic,
+  Pencil,
+  Settings2,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,12 +24,26 @@ import {
 import { FloatingInput } from "@/components/ui/input";
 import { FloatingTextarea } from "@/components/ui/textarea";
 import { SelectField } from "@/components/ui/select";
-import { useUpdateChatbotMutation } from "@/features/chatbot/chatbotApiSlice";
-import { TONE_OPTIONS } from "@/features/chatbot/chatbot.helpers";
+import FeaturePicker, {
+  FeatureSummary,
+} from "@/components/shared/feature-picker";
+import {
+  useSelectVoiceMutation,
+  useUpdateChatbotMutation,
+  useVoiceOptionsQuery,
+} from "@/features/chatbot/chatbotApiSlice";
+import {
+  featuresError,
+  pickFeatures,
+  TONE_OPTIONS,
+} from "@/features/chatbot/chatbot.helpers";
+import { capitalize, paceLabel } from "@/features/chatbot/voice.helpers";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
 import { useFilePreviews } from "@/lib/file-handle";
 import { cn } from "@/lib/utils";
 import ChatbotTile from "./chatbot-tile";
+import useVoicePreview from "./voice/use-voice-preview";
+import VoicePicker, { VoicePlayButton } from "./voice/voice-picker";
 
 const LANGUAGE_OPTIONS = [
   { value: "en", label: "English" },
@@ -50,8 +73,10 @@ const TIMEZONE_OPTIONS = [
 // come second, identity details last.
 const CONFIG_TABS = [
   { value: "behaviour", label: "Behavior" },
+  { value: "features", label: "Features" },
+  { value: "voice", label: "Voice" },
   { value: "guardrails", label: "Guardrails" },
-  { value: "details", label: "Basic Details" },
+  { value: "details", label: "Details" },
 ];
 
 const TAB_BY_FIELD = {
@@ -69,24 +94,31 @@ const prettyTone = (tone) =>
     .replaceAll("_", " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const ConfigSection = ({ icon, title, children }) => {
+const ConfigSection = ({ icon, title, hint, children, bodyClassName }) => {
   const Icon = icon;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-background">
-      <div className="flx gap-2 border-b border-border bg-muted/30 px-4 py-2.5">
-        <Icon size={14} className="shrink-0 text-primary" />
-        <p className="text-[11px] font-bold uppercase tracking-wider text-foreground">
-          {title}
-        </p>
+      <div className="flbx gap-2 border-b border-border bg-muted/30 px-4 py-2.5">
+        <div className="flx gap-2">
+          <Icon size={14} className="shrink-0 text-primary" />
+          <p className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+            {title}
+          </p>
+        </div>
+        {hint && (
+          <span className="text-[11px] text-muted-foreground">{hint}</span>
+        )}
       </div>
-      <div className="divide-y divide-border/70">{children}</div>
+      <div className={cn("divide-y divide-border/70", bodyClassName)}>
+        {children}
+      </div>
     </div>
   );
 };
 
-const ConfigRow = ({ label, value }) => (
-  <div className="px-4 py-3">
+const ConfigRow = ({ label, value, className }) => (
+  <div className={cn("px-4 py-3", className)}>
     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
       {label}
     </p>
@@ -108,6 +140,17 @@ const ConfigRow = ({ label, value }) => (
 const EditConfigForm = ({ chatbot, onClose }) => {
   const [activeTab, setActiveTab] = useState(CONFIG_TABS[0].value);
   const [updateChatbot, { isLoading }] = useUpdateChatbotMutation();
+  const [selectVoice, { isLoading: isSelectingVoice }] =
+    useSelectVoiceMutation();
+
+  // Features, voice and pace are custom controls, so they live outside RHF.
+  const [features, setFeatures] = useState(() => pickFeatures(chatbot));
+  const initialVoiceName =
+    chatbot.voice?.type === "prebuilt" ? chatbot.voice.name : null;
+  const [voiceName, setVoiceName] = useState(initialVoiceName);
+  const [speakingPace, setSpeakingPace] = useState(
+    chatbot.speakingPace || "normal",
+  );
 
   const logoInputRef = useRef(null);
   const [logoFile, setLogoFile] = useState(null);
@@ -140,6 +183,11 @@ const EditConfigForm = ({ chatbot, onClose }) => {
   });
 
   const onSubmit = async (values) => {
+    if (featuresError(features)) {
+      setActiveTab("features");
+      return;
+    }
+
     const changes = {
       chatbot: chatbot.slug,
       name: values.name.trim(),
@@ -152,6 +200,8 @@ const EditConfigForm = ({ chatbot, onClose }) => {
       instructions: values.instructions?.trim() || "",
       escalationRule: values.escalationRule?.trim() || "",
       neverAnswer: values.neverAnswer?.trim() || "",
+      speakingPace,
+      ...features,
     };
 
     if (logoFile) changes.logo = logoFile;
@@ -159,6 +209,14 @@ const EditConfigForm = ({ chatbot, onClose }) => {
 
     try {
       await updateChatbot(changes).unwrap();
+
+      if (voiceName && voiceName !== initialVoiceName) {
+        await selectVoice({
+          chatbot: chatbot.slug,
+          voiceType: "prebuilt",
+          voiceName,
+        }).unwrap();
+      }
 
       toast.success("Configuration updated");
       onClose();
@@ -174,22 +232,27 @@ const EditConfigForm = ({ chatbot, onClose }) => {
     if (ownerTab) setActiveTab(ownerTab);
   };
 
+  const featureProblem = featuresError(features);
+
   return (
     <>
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+      <div className="grid grid-cols-5 gap-1 rounded-xl bg-muted p-1">
         {CONFIG_TABS.map((tab) => (
           <button
             key={tab.value}
             type="button"
             onClick={() => setActiveTab(tab.value)}
             className={cn(
-              "flex items-center justify-center rounded-lg px-2 py-2 text-xs font-semibold transition",
+              "relative flex items-center justify-center rounded-lg px-1 py-2 text-xs font-semibold transition",
               activeTab === tab.value
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             <span className="truncate">{tab.label}</span>
+            {tab.value === "features" && featureProblem && (
+              <span className="absolute right-1 top-1 size-1.5 rounded-full bg-red-500" />
+            )}
           </button>
         ))}
       </div>
@@ -231,6 +294,27 @@ const EditConfigForm = ({ chatbot, onClose }) => {
               rows={3}
               className="min-h-20"
               {...register("fallbackMessage")}
+            />
+          </div>
+
+          <div className={cn(activeTab !== "features" && "hidden")}>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Choose what the agent can do. A source is only used when it's
+              enabled and has trained content.
+            </p>
+            <FeaturePicker value={features} onChange={setFeatures} />
+          </div>
+
+          <div className={cn(activeTab !== "voice" && "hidden")}>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Used in voice mode. Changes apply from the next voice session.
+            </p>
+            <VoicePicker
+              voiceName={voiceName}
+              onVoiceChange={setVoiceName}
+              pace={speakingPace}
+              onPaceChange={setSpeakingPace}
+              currentVoice={chatbot.voice}
             />
           </div>
 
@@ -366,7 +450,10 @@ const EditConfigForm = ({ chatbot, onClose }) => {
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting || isLoading}>
+          <Button
+            type="submit"
+            disabled={isSubmitting || isLoading || isSelectingVoice}
+          >
             {isSubmitting ? "Saving…" : "Save changes"}
           </Button>
         </DialogFooter>
@@ -377,11 +464,12 @@ const EditConfigForm = ({ chatbot, onClose }) => {
 
 const EditConfigDialog = ({ open, setOpen, chatbot }) => (
   <Dialog open={open} onOpenChange={setOpen}>
-    <DialogContent className="grid max-h-[min(85vh,40rem)] grid-rows-[auto_auto_minmax(0,1fr)] rounded-3xl sm:max-w-lg">
+    <DialogContent className="grid max-h-[min(88vh,44rem)] grid-rows-[auto_auto_minmax(0,1fr)] rounded-3xl sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>Edit configuration</DialogTitle>
         <DialogDescription>
-          Tune how the bot behaves and escalates, or update its basic details.
+          Tune how the bot behaves, what it can do, how it sounds, and its
+          basic details.
         </DialogDescription>
       </DialogHeader>
 
@@ -396,13 +484,72 @@ const EditConfigDialog = ({ open, setOpen, chatbot }) => (
   </Dialog>
 );
 
+// Current voice + pace, with a play button for prebuilt voices.
+const VoiceSummary = ({ chatbot }) => {
+  const { data: options } = useVoiceOptionsQuery();
+  const preview = useVoicePreview();
+  const voice = chatbot.voice;
+  // The details payload has no preview_url until one is generated; the
+  // options list may already have it.
+  const playable =
+    voice?.type === "prebuilt"
+      ? (options?.prebuiltVoices.find((item) => item.name === voice.name) ??
+        voice)
+      : null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      {playable ? (
+        <VoicePlayButton
+          preview={preview}
+          voice={playable}
+          className="size-10 rounded-full"
+        />
+      ) : (
+        <span className="center size-10 shrink-0 rounded-full bg-primary/10 text-primary">
+          {voice?.type === "custom" ? <Mic size={16} /> : <AudioLines size={16} />}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">
+          {voice?.name || "Platform default"}
+          {voice?.isDefault && (
+            <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              Default
+            </span>
+          )}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {[
+            voice?.type === "custom" ? "Custom voice" : voice?.style,
+            capitalize(voice?.gender),
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Used in voice mode"}
+        </p>
+      </div>
+      <span className="flx shrink-0 gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-foreground">
+        <Gauge size={12} className="text-primary" />
+        {paceLabel(chatbot.speakingPace)}
+      </span>
+    </div>
+  );
+};
+
 const ConfigForm = ({ chatbot }) => {
   const [editOpen, setEditOpen] = useState(false);
+  const features = pickFeatures(chatbot);
+  const enabledCount = Object.values(features).filter(Boolean).length;
 
   return (
     <div className="space-y-4">
       <div className="flbx">
-        <p className="text-sm font-bold text-foreground">Configuration</p>
+        <div>
+          <p className="text-sm font-bold text-foreground">Configuration</p>
+          <p className="text-xs text-muted-foreground">
+            How your agent behaves, sounds, and what it can do.
+          </p>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -414,13 +561,31 @@ const ConfigForm = ({ chatbot }) => {
         </Button>
       </div>
 
+      <ConfigSection
+        icon={Sparkles}
+        title="Features"
+        hint={`${enabledCount} of 4 on`}
+        bodyClassName="p-3"
+      >
+        <FeatureSummary value={features} />
+      </ConfigSection>
+
+      <ConfigSection icon={AudioLines} title="Voice">
+        <VoiceSummary chatbot={chatbot} />
+      </ConfigSection>
+
       <ConfigSection icon={Settings2} title="Behavior">
-        <ConfigRow label="Tone of voice" value={prettyTone(chatbot.tone)} />
+        <div className="grid grid-cols-2 divide-x divide-border/70">
+          <ConfigRow label="Tone of voice" value={prettyTone(chatbot.tone)} />
+          <ConfigRow
+            label="Language"
+            value={chatbot.language && languageLabel(chatbot.language)}
+          />
+        </div>
         <ConfigRow
-          label="Language"
-          value={chatbot.language && languageLabel(chatbot.language)}
+          label="Timezone"
+          value={chatbot.timezone?.replaceAll("_", " ")}
         />
-        <ConfigRow label="Timezone" value={chatbot.timezone} />
         <ConfigRow label="Fallback message" value={chatbot.fallbackMessage} />
       </ConfigSection>
 

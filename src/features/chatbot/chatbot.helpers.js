@@ -1,3 +1,5 @@
+import { normalizeVoice } from "./voice.helpers";
+
 const emptyKnowledge = () => ({ base: [], products: [], services: [] });
 
 const CHATBOT_FIELD_MAP = {
@@ -8,7 +10,59 @@ const CHATBOT_FIELD_MAP = {
   escalationRule: "escalation_rule",
   neverAnswer: "never_answer",
   otherSettings: "other_settings",
+  speakingPace: "speaking_pace",
+  knowledgeEnabled: "knowledge_enabled",
+  productsEnabled: "products_enabled",
+  servicesEnabled: "services_enabled",
+  productOrderingEnabled: "product_ordering_enabled",
 };
+
+// What the agent can do. `requires` marks an add-on that only works with its
+// parent feature on.
+export const CHATBOT_FEATURES = [
+  {
+    key: "knowledgeEnabled",
+    label: "Knowledge base",
+    description: "Answer from documents, web pages, and raw text",
+  },
+  {
+    key: "productsEnabled",
+    label: "Products",
+    description: "Search and recommend products",
+  },
+  {
+    key: "productOrderingEnabled",
+    label: "Product ordering",
+    description: "Add products to a cart and take orders",
+    requires: "productsEnabled",
+  },
+  {
+    key: "servicesEnabled",
+    label: "Services",
+    description: "Search and recommend services",
+  },
+];
+
+export const DEFAULT_FEATURES = {
+  knowledgeEnabled: true,
+  productsEnabled: true,
+  servicesEnabled: true,
+  productOrderingEnabled: false,
+};
+
+export const pickFeatures = (chatbot = {}) =>
+  Object.fromEntries(
+    Object.keys(DEFAULT_FEATURES).map((key) => [
+      key,
+      chatbot[key] ?? DEFAULT_FEATURES[key],
+    ]),
+  );
+
+// Mirrors the API rules so the request never fails with a 400.
+export const featuresError = (features = {}) =>
+  features.knowledgeEnabled || features.productsEnabled || features.servicesEnabled
+    ? null
+    : "Enable at least one of knowledge base, products, or services";
 
 export const TONE_OPTIONS = [
   "friendly",
@@ -47,6 +101,13 @@ export const normalizeChatbot = (raw = {}) => ({
   timezone: raw.timezone,
   otherSettings: raw.other_settings ?? raw.otherSettings,
   logo: raw.logo ?? null,
+  speakingPace: raw.speaking_pace ?? raw.speakingPace ?? "normal",
+  knowledgeEnabled: raw.knowledge_enabled ?? raw.knowledgeEnabled ?? true,
+  productsEnabled: raw.products_enabled ?? raw.productsEnabled ?? true,
+  servicesEnabled: raw.services_enabled ?? raw.servicesEnabled ?? true,
+  productOrderingEnabled:
+    raw.product_ordering_enabled ?? raw.productOrderingEnabled ?? false,
+  voice: normalizeVoice(raw.voice),
   isAdminCreated: raw.is_admin_created ?? raw.isAdminCreated ?? false,
   trainedKnowledge: {
     productCount:

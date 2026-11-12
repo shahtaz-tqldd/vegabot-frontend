@@ -1,5 +1,6 @@
 import { apiSlice } from "../api/apiSlice";
 import { normalizeChatbot, toChatbotPayload } from "./chatbot.helpers";
+import { normalizeVoiceOptions } from "./voice.helpers";
 
 const CHATBOTS_URL = "/chatbots";
 
@@ -86,6 +87,50 @@ export const chatbotApiSlice = apiSlice.injectEndpoints({
         { type: "chatbots", id: chatbot },
       ],
     }),
+
+    // ── Voices ────────────────────────────────────────────────────────────
+
+    voiceOptions: builder.query({
+      query: () => ({ url: `${CHATBOTS_URL}/voices/options/`, method: "GET" }),
+      transformResponse: (response = {}) =>
+        normalizeVoiceOptions(response.data ?? response),
+      keepUnusedDataFor: 3600,
+    }),
+
+    // The first request for a voice generates the clip (a few seconds), so
+    // it's fetched lazily when someone presses play.
+    voicePreview: builder.query({
+      query: (voice) => ({
+        url: `${CHATBOTS_URL}/voices/preview/`,
+        method: "GET",
+        params: { voice },
+      }),
+      transformResponse: (response = {}) => {
+        const data = response.data ?? response;
+        return { voice: data.voice, previewUrl: data.preview_url ?? null };
+      },
+      keepUnusedDataFor: 3600,
+    }),
+
+    selectVoice: builder.mutation({
+      query: ({ chatbot, voiceType, voiceName, customVoice, speakingPace }) => {
+        const body = { voice_type: voiceType };
+        if (voiceType === "prebuilt") body.voice_name = voiceName;
+        if (voiceType === "custom") body.custom_voice = customVoice;
+        if (speakingPace) body.speaking_pace = speakingPace;
+
+        return {
+          url: `${CHATBOTS_URL}/voices/select/`,
+          method: "PATCH",
+          params: { chatbot },
+          body,
+        };
+      },
+      invalidatesTags: (result, error, { chatbot } = {}) => [
+        { type: "chatbots", id: "LIST" },
+        { type: "chatbots", id: chatbot },
+      ],
+    }),
   }),
 });
 
@@ -95,4 +140,7 @@ export const {
   useCreateChatbotMutation,
   useUpdateChatbotMutation,
   useDeleteChatbotMutation,
+  useVoiceOptionsQuery,
+  useLazyVoicePreviewQuery,
+  useSelectVoiceMutation,
 } = chatbotApiSlice;
