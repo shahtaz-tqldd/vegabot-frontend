@@ -33,17 +33,6 @@ export const authApiSlice = apiSlice.injectEndpoints({
       },
     }),
 
-    googleAuth: builder.mutation({
-      query: (payload) => {
-        return {
-          url: `/accounts/google/`,
-          method: "POST",
-          body: payload,
-        };
-      },
-      invalidatesTags: ["my-profile"],
-    }),
-
     refresh: builder.mutation({
       query: (payload) => {
         return {
@@ -150,7 +139,6 @@ export const {
   useUserProfileQuery,
   useRegisterMutation,
   useVerifyOTPMutation,
-  useGoogleAuthMutation,
   useRefreshMutation,
   usePublicAccountQuery,
   useSelfDetailsQuery,
