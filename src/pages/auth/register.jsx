@@ -1,15 +1,12 @@
 import React, { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
-import { useDispatch } from "react-redux";
 
 import { Button } from "@/components/ui/button";
 import { FloatingInput } from "@/components/ui/input";
 import { PENDING_VERIFICATION_EMAIL_KEY } from "@/constants/session";
 import { useRegisterMutation } from "@/features/auth/authApiSlice";
-import { userLoggedIn } from "@/features/auth/authSlice";
 import { getApiErrorMessage } from "@/lib/get-api-error-message";
-import GoogleAuthButton from "./components/google-auth";
 import AuthContainer from "./components/container";
 
 const RegisterPage = () => {
@@ -17,7 +14,6 @@ const RegisterPage = () => {
   const [error, setError] = useState("");
   const [errorAnimationKey, setErrorAnimationKey] = useState(0);
   const navigate = useNavigate();
-  const dispatch = useDispatch();
 
   const {
     handleSubmit,
@@ -60,21 +56,6 @@ const RegisterPage = () => {
     }
   };
 
-  const handleGoogleAuthSuccess = ({
-    accessToken,
-    refreshToken,
-    rememberMe,
-  }) => {
-    dispatch(userLoggedIn({ accessToken, refreshToken, rememberMe }));
-    navigate("/", { replace: true });
-    setError("");
-  };
-
-  const handleAuthError = (message) => {
-    setError(message);
-    setErrorAnimationKey((current) => current + 1);
-  };
-
   return (
     <AuthContainer
       title="Create account"
@@ -89,22 +70,7 @@ const RegisterPage = () => {
         </div>
       )}
 
-      <div className="space-y-5">
-        <GoogleAuthButton
-          onAuthenticated={handleGoogleAuthSuccess}
-          onError={handleAuthError}
-        />
-
-        <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs font-medium uppercase text-muted-foreground">
-            Or
-          </span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <Controller
           name="name"
           control={control}
